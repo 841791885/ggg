@@ -1,0 +1,11 @@
+# Go 编译产物
+/ggg
+*.test
+*.out
+
+# 本地配置与编辑器文件
+.env
+.idea/
+.vscode/
+.DS_Store
+
