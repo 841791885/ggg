@@ -17,30 +17,29 @@
 
 ### 2.1 架构策略
 
-项目采用**模块化单体**：部署时是一个 Go API 服务，代码内部按业务模块划分。它比单文件项目更容易维护，又避免初学阶段过早承担微服务的网络调用、数据一致性和运维成本。
+项目采用**模块化单体 + 传统按层 MVC**：部署时是一个 Go API 服务，代码按 model、repository、service、controller 和 route 分层。它便于从前端 MVC 思维过渡到 Go 后端，又避免初学阶段过早承担微服务的网络调用、数据一致性和运维成本。
 
 最终建议目录形态：
 
 ```text
 .
-├── cmd/api                 # API 程序入口
-├── internal
-│   ├── auth                # 认证与权限
-│   ├── catalog             # 分类、商品与 SKU
-│   ├── cart                # 购物车
-│   ├── inventory           # 库存与库存流水
-│   ├── order               # 订单与状态机
-│   ├── payment             # 模拟支付与退款
-│   ├── promotion           # 优惠券
-│   ├── notification        # 通知任务
-│   └── platform            # 配置、数据库、缓存、日志等
+├── main.go                 # API 程序入口
+├── config                  # YAML 配置读取与校验
+├── controllers             # HTTP/JSON 控制器
+├── database                # MySQL、Redis 等基础连接
+├── models                  # 商品、用户、订单等模型
+├── repositories            # 存储接口与 GORM 实现
+├── routes                  # 路由和中间件注册
+├── services                # 业务规则和流程编排
 ├── migrations              # 数据库迁移
 ├── docs                    # PRD、API 和运行文档
 ├── deployments             # Nginx、Docker 等部署配置
 └── tests                   # 跨模块集成测试
 ```
 
-目录会随阶段逐步形成，第一阶段不需要一次创建全部空目录。
+目录会随阶段逐步形成，第一阶段不需要一次创建全部空目录。随着功能增加，各层通过 `product_*`、`order_*` 等文件名区分业务领域。
+
+由于后端只提供 REST API，不渲染 HTML 模板，所以 JSON 响应由 controllers 处理，不单独建立传统 views 目录。
 
 ### 2.2 核心技术栈
 
@@ -50,8 +49,8 @@
 | HTTP 框架 | Gin | 路由和中间件成熟，学习成本适中 |
 | 参数校验 | go-playground/validator | Gin 生态常用，支持结构体规则校验 |
 | 主数据库 | MySQL 8（InnoDB） | 国内商城项目常见，事务和行锁足以支撑订单业务 |
-| 数据库驱动 | `database/sql` + `go-sql-driver/mysql` | 使用标准接口并理解连接池、事务和驱动边界 |
-| SQL 访问 | 手写参数化 SQL | 先理解 SQL、事务和数据边界，不由 ORM 隐藏细节 |
+| ORM/驱动 | GORM + `go-sql-driver/mysql` | 简化基础映射，同时通过日志和测试理解实际 SQL |
+| SQL 访问 | GORM 为主、参数化原生 SQL 为辅 | Repository 隔离持久化，复杂事务仍需理解 SQL |
 | 数据库迁移 | Goose | SQL 迁移简单直接，让表结构变化可重复、可追踪 |
 | 缓存 | Redis + go-redis/v9 | 缓存、临时状态、限流和分布式协调 |
 | 对象存储 | MinIO（S3 兼容） | 让多个 API 实例共享商品图片 |
@@ -71,8 +70,8 @@
 
 | 阶段 | 交付主题 | 新增核心技术 | 阶段结果 |
 | --- | --- | --- | --- |
-| PRD-001 | 内存版商品目录 | Gin、接口、Mutex、httptest | 可管理和查询商品/SKU |
-| PRD-002 | MySQL 持久化 | MySQL 8、database/sql、迁移 | 数据重启不丢失 |
+| PRD-001 | MySQL 商品目录 | Gin、GORM、MySQL、YAML、Docker | 可持久化管理和查询商品/SKU |
+| PRD-002 | 分类、图片与迁移治理 | Goose、文件存储、复杂筛选 | 完善商品目录工程能力 |
 | PRD-003 | 用户认证与权限 | bcrypt、JWT、中间件 | 消费者与运营接口隔离 |
 | PRD-004 | 地址与购物车 | Redis 前先用 MySQL | 用户可准备购买清单 |
 | PRD-005 | 订单与库存 | 事务、锁、状态机 | 可正确下单且不超卖 |
@@ -92,7 +91,7 @@
 | 角色与权限 | PRD-003 | PRD-010 审计完善 |
 | 收货地址 | PRD-004 | PRD-005 订单地址快照 |
 | 商品分类 | PRD-002 | PRD-006 分类查询缓存 |
-| 商品与 SKU | PRD-001 | PRD-002 持久化、PRD-006 缓存 |
+| 商品与 SKU | PRD-001 | PRD-002 分类图片、PRD-006 缓存 |
 | 商品搜索与筛选 | PRD-002 | PRD-012 查询性能优化 |
 | 库存管理 | PRD-001 基础库存 | PRD-005 库存预占与防超卖 |
 | 购物车 | PRD-004 | PRD-006 Redis 优化 |
@@ -111,11 +110,11 @@
 | 文件与商品图片 | PRD-002 | PRD-011 Nginx 静态资源服务 |
 | 审计日志 | PRD-010 | PRD-012 查询和观测完善 |
 
-## 4. PRD-001：内存版商品与 SKU 管理
+## 4. PRD-001：MySQL 商品与 SKU 管理
 
 ### 阶段目标
 
-建立第一个结构清晰、并发安全、可自动化测试的 Gin 服务，跑通商品目录的最小业务闭环。
+建立第一个结构清晰、数据可持久化、可自动化测试的 Gin 服务，跑通商品目录的最小业务闭环。
 
 ### 实现功能
 
@@ -125,52 +124,54 @@
 - 只有上架商品可以出现在消费者查询接口。
 - SKU 包含规格、价格和库存数量。
 - 统一成功与错误响应格式。
-- 健康检查接口。
+- 数据库就绪检查接口。
 
 ### 使用技术
 
 - Go module。
 - Gin 路由、路由分组和中间件。
 - `net/http` 状态码。
-- `sync.RWMutex` 保护内存仓库。
-- `crypto/rand` 或等效安全方式生成标识。
+- Docker 中独立运行 MySQL 8。
+- GORM 和 `go-sql-driver/mysql`。
+- `gopkg.in/yaml.v3` 严格读取 `config.yaml`。
+- GORM 软删除、事务、JSON 字段和唯一索引。
 - 标准库 `testing`、`httptest`。
 
 ### 重点掌握
 
 - struct、方法、接口和构造函数。
-- handler、service、repository 的职责边界。
+- controller、service、repository 的职责边界。
 - 错误值的定义、包装和判断。
-- 指针、slice/map 与并发读写。
+- GORM 模型映射、连接池和数据库约束。
 - 依赖注入，而不是可变全局变量。
 - HTTP 输入校验和 API 契约。
 
 ### 本阶段不做
 
-- 不接数据库、Redis、登录、购物车和订单。
-- 不使用 ORM。
+- 不接 Redis、登录、购物车和订单。
+- 不使用 Docker Compose，当前只运行单个 MySQL 容器。
 - 不为了未来功能创建空模块。
 
 ### 阶段出口
 
 - 商品和 SKU 的核心接口验收通过。
 - `go test ./...`、`go test -race ./...`、`go vet ./...` 通过。
-- 服务关闭后数据丢失属于本阶段预期行为。
+- 服务重启后商品数据仍存在，MySQL 集成测试通过。
 
 ### 为下一阶段铺路
 
-Repository 接口让内存实现可以替换为 MySQL，实现业务层尽量不感知存储方式。
+Repository 接口隔离 GORM/MySQL，使后续 service 不直接依赖数据库实现。
 
-## 5. PRD-002：MySQL 持久化
+## 5. PRD-002：分类、图片与迁移治理
 
 ### 阶段目标
 
-用关系型数据库替换内存仓库，使商品数据可靠保存，并掌握数据库约束和事务基础。
+在已有 MySQL/GORM 商品目录上增加分类和图片，并建立正式迁移治理。
 
 ### 实现功能
 
-- 分类、商品、SKU 和库存持久化。
-- 数据库唯一约束、外键、检查约束和索引。
+- 分类持久化并关联商品。
+- 完善商品、SKU 和库存约束、外键与索引。
 - 商品列表分页、筛选和排序。
 - 商品软删除或停用，保护历史关联。
 - 上传商品图片并校验文件类型和大小。
@@ -181,8 +182,8 @@ Repository 接口让内存实现可以替换为 MySQL，实现业务层尽量不
 ### 使用技术
 
 - MySQL 8，所有业务表使用 InnoDB。
-- 标准库 `database/sql` 与 `go-sql-driver/mysql`。
-- 手写参数化 SQL。
+- GORM 与 `go-sql-driver/mysql`。
+- GORM 为主，必要时使用参数化原生 SQL。
 - Goose 管理 SQL 迁移。
 - `context.Context` 管理查询超时和取消。
 - Gin multipart 文件上传和标准库文件操作。
@@ -200,7 +201,7 @@ Repository 接口让内存实现可以替换为 MySQL，实现业务层尽量不
 
 ### 本阶段不做
 
-- 不引入 ORM、Redis和读写分离。
+- 不引入 Redis、第二套 ORM 或读写分离。
 - 不接对象存储或 CDN，本地文件存储只是可替换实现。
 - 不实现用户和订单。
 
@@ -714,7 +715,7 @@ go test -race ./...
 每阶段遵循以下循环：
 
 1. 阅读阶段 PRD，只确认需求，不提前看完整实现。
-2. 先设计数据结构、接口和错误，再编写 handler。
+2. 先设计数据结构、接口和错误，再编写 controller。
 3. 用测试固定核心业务规则。
 4. 完成功能并执行质量检查。
 5. 发起验收和代码审查。
@@ -730,4 +731,4 @@ go test -race ./...
 
 ## 18. 下一步
 
-PRD-001 至 PRD-012 的阶段文档已经建立，入口见 [文档索引](./README.md)。当前只执行 `PRD-001：内存版商品与 SKU 管理`；验收通过后复核并启用 PRD-002。本路线图不代替各阶段 PRD。
+PRD-001 至 PRD-012 的阶段文档已经建立，入口见 [文档索引](./README.md)。当前只执行 `PRD-001：MySQL 商品与 SKU 管理`；验收通过后复核并启用 PRD-002。本路线图不代替各阶段 PRD。

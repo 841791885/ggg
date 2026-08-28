@@ -1,0 +1,3 @@
+### 数据库健康检查
+GET {{baseUrl}}/health/ready
+Accept: application/json

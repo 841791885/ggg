@@ -1,0 +1,9 @@
+### 创建商品
+POST {{baseUrl}}/api/v1/admin/products
+Content-Type: application/json
+Accept: application/json
+
+{
+  "name": "Http详解",
+  "description": "使用 VS Code HTTP 文件创建的商品"
+}

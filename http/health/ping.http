@@ -1,0 +1,3 @@
+### 服务连通检查
+GET {{baseUrl}}/ping
+Accept: application/json

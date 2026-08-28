@@ -1,0 +1,3 @@
+### 根据 ID 查询指定商品
+GET {{baseUrl}}/api/v1/admin/products/1
+Accept: application/json

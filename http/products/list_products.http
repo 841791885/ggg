@@ -1,0 +1,15 @@
+### 不传参数时使用 page=1、page_size=20
+GET {{baseUrl}}/api/v1/admin/products
+Accept: application/json
+
+### 使用分页参数查询
+GET {{baseUrl}}/api/v1/admin/products?page=1&page_size=10
+Accept: application/json
+
+### 按照名称筛选
+GET {{baseUrl}}/api/v1/admin/products?page=1&page_size=20&name=Go
+Accept: application/json
+
+### 使用非法分页参数调试参数校验
+GET {{baseUrl}}/api/v1/admin/products?page=0&page_size=20
+Accept: application/json

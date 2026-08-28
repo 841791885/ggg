@@ -5,7 +5,10 @@
 
 # 本地配置与编辑器文件
 .env
+config.local.yaml
 .idea/
 .vscode/
 .DS_Store
 
+# MySQL 本地运行数据由 Docker 生成，保留在项目中但不提交到 Git
+/data/mysql/

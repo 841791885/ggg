@@ -1,0 +1,18 @@
+server:
+  address: ":8080"
+  read_header_timeout: 5s
+  shutdown_timeout: 10s
+
+database:
+  host: "127.0.0.1"
+  port: 3307
+  username: "gomall"
+  password: "gomall_dev"
+  name: "gomall"
+  charset: "utf8mb4"
+  collation: "utf8mb4_0900_ai_ci"
+  max_open_connections: 20
+  max_idle_connections: 10
+  connection_max_lifetime: 30m
+  connection_max_idle_time: 5m
+  connect_timeout: 5s

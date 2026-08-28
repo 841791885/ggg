@@ -1,0 +1,78 @@
+### 同时修改商品名称和描述
+PATCH {{baseUrl}}/api/v1/admin/products/1
+Content-Type: application/json
+Accept: application/json
+
+{
+  "name": "Go 商城进阶实战",
+  "description": "学习 Gin、GORM 和 MySQL"
+}
+
+### 只修改商品名称
+PATCH {{baseUrl}}/api/v1/admin/products/1
+Content-Type: application/json
+Accept: application/json
+
+{
+  "name": "Go 商城实战"
+}
+
+### 只修改商品描述
+PATCH {{baseUrl}}/api/v1/admin/products/1
+Content-Type: application/json
+Accept: application/json
+
+{
+  "description": "只更新描述，名称保持不变"
+}
+
+### 明确清空商品描述，验证零值也会进入 UPDATE
+PATCH {{baseUrl}}/api/v1/admin/products/1
+Content-Type: application/json
+Accept: application/json
+
+{
+  "description": ""
+}
+
+### 空对象，用于验证字段校验
+PATCH {{baseUrl}}/api/v1/admin/products/1
+Content-Type: application/json
+Accept: application/json
+
+{}
+
+### 商品名称太短，返回 400
+PATCH {{baseUrl}}/api/v1/admin/products/1
+Content-Type: application/json
+Accept: application/json
+
+{
+  "name": "G"
+}
+
+### 修改不存在的商品，返回 404
+PATCH {{baseUrl}}/api/v1/admin/products/999999
+Content-Type: application/json
+Accept: application/json
+
+{
+  "name": "不存在的商品"
+}
+
+### product_id 非法，返回 400 INVALID_ARGUMENT
+PATCH {{baseUrl}}/api/v1/admin/products/abc
+Content-Type: application/json
+Accept: application/json
+
+{
+  "name": "Go 商城实战"
+}
+
+### JSON 格式错误，返回 400
+PATCH {{baseUrl}}/api/v1/admin/products/1
+Content-Type: application/json
+Accept: application/json
+
+{
+  "name": "缺少结束括号"
