@@ -30,5 +30,12 @@ func New(
 	admin.PATCH("/products/:product_id", productController.UpdateProduct)
 	admin.DELETE("/products/:product_id", productController.DeleteProduct)
 
+	admin.POST("/products/:product_id/skus", productController.CreateSKU)
+	admin.GET("/products/:product_id/skus/:sku_id", productController.GetSKU)
+	admin.GET("/products/:product_id/skus", productController.ListSKU)
+	admin.PATCH("/products/:product_id/skus/:sku_id", productController.UpdateSKU)
+	admin.DELETE("/products/:product_id/skus/:sku_id", productController.DeleteSKU)
+	admin.PATCH("/products/:product_id/skus/:sku_id/status", productController.UpdateSKUStatus)
+
 	return router, nil
 }

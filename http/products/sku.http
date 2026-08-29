@@ -1,0 +1,24 @@
+### 查询商品下的单个 SKU
+GET {{baseUrl}}/api/v1/admin/products/1/skus/1
+
+### 查询不存在的 SKU
+GET {{baseUrl}}/api/v1/admin/products/1/skus/999999
+
+### 查询商品的 SKU 列表
+GET {{baseUrl}}/api/v1/admin/products/1/skus?page=1&page_size=20
+
+### 修改 SKU
+PATCH {{baseUrl}}/api/v1/admin/products/1/skus/1
+Content-Type: application/json
+
+{
+  "code": "GO-COURSE-001",
+  "specs": {
+    "版本": "电子版"
+  },
+  "price_cent": 9900,
+  "stock": 100
+}
+
+### 删除 SKU
+DELETE {{baseUrl}}/api/v1/admin/products/1/skus/1

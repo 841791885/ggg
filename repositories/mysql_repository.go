@@ -15,10 +15,17 @@ import (
 // 业务层依赖此接口，不直接依赖下面的 MySQLRepository 实现。
 type Repository interface {
 	CreateProduct(ctx context.Context, product model.Product) (model.Product, error)
-	ListProducts(ctx context.Context, query ListProductsQuery) ([]model.Product, error)
+	ListProducts(ctx context.Context, query ListProductsQuery) (int64, []model.Product, error)
 	GetProduct(ctx context.Context, productID uint64) (*model.Product, error)
 	UpdateProduct(ctx context.Context, productID uint64, fields UpdateProductFields) (model.Product, error)
 	DeleteProduct(ctx context.Context, productID uint64) error
+
+	CreateSKU(ctx context.Context, sku model.SKU) (model.SKU, error)
+	GetSKU(ctx context.Context, productID, skuID uint64) (model.SKU, error)
+	ListSKU(ctx context.Context, productID uint64, query ListSKUQuery) (int64, []model.SKU, error)
+	UpdateSKU(ctx context.Context, productID, skuID uint64, fields UpdateSKUFields) (model.SKU, error)
+	DeleteSKU(ctx context.Context, productID, skuID uint64) error
+	UpdateSKUStatus(ctx context.Context, productID, skuID uint64, status model.SKUStatus) (model.SKU, error)
 }
 
 // UpdateProductFields 表示本次需要更新的商品字段，nil 表示不更新该字段。
@@ -27,11 +34,23 @@ type UpdateProductFields struct {
 	Description *string
 }
 
+type UpdateSKUFields struct {
+	Code      *string
+	Specs     map[string]string
+	PriceCent *int64
+	Stock     *int64
+}
+
 // ListProductsQuery 是 Repository 查询商品列表所需的条件。
 type ListProductsQuery struct {
 	Page     int
 	PageSize int
 	Name     string
+}
+
+type ListSKUQuery struct {
+	Page, PageSize int
+	Name           string
 }
 
 // MySQLRepository 使用 GORM 将商品保存到 MySQL。
@@ -60,7 +79,7 @@ func (r *MySQLRepository) CreateProduct(ctx context.Context, product model.Produ
 }
 
 // ListProducts 按名称筛选并分页查询商品，Page 从 1 开始。
-func (r *MySQLRepository) ListProducts(ctx context.Context, query ListProductsQuery) ([]model.Product, error) {
+func (r *MySQLRepository) ListProducts(ctx context.Context, query ListProductsQuery) (int64, []model.Product, error) {
 	offset := (query.Page - 1) * query.PageSize
 	log.Printf(
 		"[Repository] 开始查询商品列表: page=%d page_size=%d offset=%d name=%q",
@@ -76,6 +95,10 @@ func (r *MySQLRepository) ListProducts(ctx context.Context, query ListProductsQu
 	}
 
 	products := make([]model.Product, 0)
+	var total int64
+	if err := databaseQuery.Model(&model.Product{}).Count(&total).Error; err != nil {
+		return 0, nil, fmt.Errorf("统计商品：%w", err)
+	}
 	// 对应 SQL；设置了 Name 时会多出 name LIKE ? 条件：
 	// SELECT * FROM products
 	// WHERE deleted_at IS NULL [AND name LIKE ?]
@@ -88,11 +111,11 @@ func (r *MySQLRepository) ListProducts(ctx context.Context, query ListProductsQu
 		Offset(offset).
 		Find(&products).Error; err != nil {
 		log.Printf("[Repository] MySQL 查询商品列表失败: %v", err)
-		return nil, fmt.Errorf("查询商品列表：%w", err)
+		return 0, nil, fmt.Errorf("查询商品列表：%w", err)
 	}
 	log.Printf("[Repository] MySQL 查询商品列表完成：count=%d", len(products))
 	log.Printf("[Repository] 查询到的商品：%+v", products)
-	return products, nil
+	return total, products, nil
 }
 
 // GetProduct 根据商品 ID 查询单个商品。
@@ -156,4 +179,104 @@ func (r *MySQLRepository) DeleteProduct(ctx context.Context, productID uint64) e
 		return model.ErrProductNotFound
 	}
 	return nil
+}
+
+// CreateSKU 使用 GORM 创建 SKU。
+func (r *MySQLRepository) CreateSKU(ctx context.Context, sku model.SKU) (model.SKU, error) {
+	// 对应 SQL：
+	// INSERT INTO skus (
+	//     product_id, code, specs, price_cent, stock, status,
+	//     created_at, updated_at, deleted_at
+	// ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
+	// MySQL 生成自增 ID 后，GORM 会把 ID 回填到 sku.ID。
+	if err := r.db.WithContext(ctx).Create(&sku).Error; err != nil {
+		if errors.Is(err, gorm.ErrDuplicatedKey) {
+			return model.SKU{}, model.ErrSKUCodeConflict
+		}
+		return model.SKU{}, fmt.Errorf("创建 SKU: %w", err)
+	}
+	return sku, nil
+}
+
+func (r *MySQLRepository) GetSKU(ctx context.Context, productID, skuID uint64) (model.SKU, error) {
+	var sku model.SKU
+	err := r.db.WithContext(ctx).Where("id = ? AND product_id = ?", skuID, productID).First(&sku).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return model.SKU{}, model.ErrSKUNotFound
+	}
+	if err != nil {
+		return model.SKU{}, fmt.Errorf("查询 SKU：%w", err)
+	}
+	return sku, nil
+}
+
+func (r *MySQLRepository) ListSKU(ctx context.Context, productID uint64, query ListSKUQuery) (int64, []model.SKU, error) {
+	items := make([]model.SKU, 0)
+	db := r.db.WithContext(ctx).Where("product_id = ?", productID)
+	if query.Name != "" {
+		db = db.Where("code LIKE ?", "%"+query.Name+"%")
+	}
+	var total int64
+	if err := db.Model(&model.SKU{}).Count(&total).Error; err != nil {
+		return 0, nil, fmt.Errorf("统计 SKU：%w", err)
+	}
+	err := db.Order("created_at DESC").Limit(query.PageSize).Offset((query.Page - 1) * query.PageSize).Find(&items).Error
+	if err != nil {
+		return 0, nil, fmt.Errorf("查询 SKU 列表：%w", err)
+	}
+	return total, items, nil
+}
+
+func (r *MySQLRepository) UpdateSKU(ctx context.Context, productID, skuID uint64, fields UpdateSKUFields) (model.SKU, error) {
+	updates := make(map[string]any)
+	if fields.Code != nil {
+		updates["code"] = *fields.Code
+	}
+	if fields.Specs != nil {
+		updates["specs"] = fields.Specs
+	}
+	if fields.PriceCent != nil {
+		updates["price_cent"] = *fields.PriceCent
+	}
+	if fields.Stock != nil {
+		updates["stock"] = *fields.Stock
+	}
+	if len(updates) == 0 {
+		return model.SKU{}, model.ErrEmptySKUUpdate
+	}
+	result := r.db.WithContext(ctx).Model(&model.SKU{}).Where("id = ? AND product_id = ?", skuID, productID).Updates(updates)
+	if result.Error != nil {
+		if errors.Is(result.Error, gorm.ErrDuplicatedKey) {
+			return model.SKU{}, model.ErrSKUCodeConflict
+		}
+		return model.SKU{}, fmt.Errorf("更新 SKU：%w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return model.SKU{}, model.ErrSKUNotFound
+	}
+	return r.GetSKU(ctx, productID, skuID)
+}
+
+func (r *MySQLRepository) DeleteSKU(ctx context.Context, productID, skuID uint64) error {
+	result := r.db.WithContext(ctx).Where("id = ? AND product_id = ?", skuID, productID).Delete(&model.SKU{})
+	if result.Error != nil {
+		return fmt.Errorf("删除 SKU：%w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return model.ErrSKUNotFound
+	}
+	return nil
+}
+
+func (r *MySQLRepository) UpdateSKUStatus(ctx context.Context, productID, skuID uint64, status model.SKUStatus) (model.SKU, error) {
+	result := r.db.WithContext(ctx).Model(&model.SKU{}).
+		Where("id = ? AND product_id = ?", skuID, productID).
+		Update("status", status)
+	if result.Error != nil {
+		return model.SKU{}, fmt.Errorf("更新 SKU 状态：%w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return model.SKU{}, model.ErrSKUNotFound
+	}
+	return r.GetSKU(ctx, productID, skuID)
 }

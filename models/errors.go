@@ -15,4 +15,13 @@ var (
 	ErrProductOnSale = errors.New("在售商品不能删除")
 	// ErrEmptyProductUpdate 表示修改商品时没有提供任何可修改字段。
 	ErrEmptyProductUpdate = errors.New("至少提供一个需要修改的商品字段")
+	ErrInvalidProductID   = errors.New("商品 ID 必须大于 0")
+	ErrInvalidSKUCode     = errors.New("SKU 编码格式不正确")
+	ErrInvalidSKUSpecs    = errors.New("SKU 规格必须为 1 到 5 项，且 key 和 value 不能为空")
+	ErrInvalidSKUPrice    = errors.New("SKU 价格必须大于 0")
+	ErrInvalidSKUStock    = errors.New("SKU 库存不能小于 0")
+	ErrSKUCodeConflict    = errors.New("SKU 编码已存在")
+	ErrSKUNotFound        = errors.New("SKU 不存在")
+	ErrEmptySKUUpdate     = errors.New("至少提供一个需要修改的 SKU 字段")
+	ErrInvalidSKUStatus   = errors.New("SKU 状态只能是 active 或 inactive")
 )

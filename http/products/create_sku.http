@@ -1,0 +1,39 @@
+### 为商品创建 SKU
+POST {{baseUrl}}/api/v1/admin/products/1/skus
+Content-Type: application/json
+Accept: application/json
+
+{
+  "code": "GO-COURSE-001",
+  "specs": {
+    "版本": "电子版"
+  },
+  "price_cent": 9900,
+  "stock": 100
+}
+
+### product_id 非法
+POST {{baseUrl}}/api/v1/admin/products/abc/skus
+Content-Type: application/json
+Accept: application/json
+
+{
+  "code": "GO-COURSE-002",
+  "specs": {
+    "版本": "纸质版"
+  },
+  "price_cent": 19900,
+  "stock": 10
+}
+
+### SKU 参数非法
+POST {{baseUrl}}/api/v1/admin/products/1/skus
+Content-Type: application/json
+Accept: application/json
+
+{
+  "code": "bad-code",
+  "specs": {},
+  "price_cent": 0,
+  "stock": -1
+}

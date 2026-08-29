@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"regexp"
 	"strings"
 	"unicode/utf8"
 
@@ -15,7 +16,14 @@ const (
 	minProductNameLength        = 2
 	maxProductNameLength        = 100
 	maxProductDescriptionLength = 2000
+	minSKUCodeLength            = 3
+	maxSKUCodeLength            = 32
+	maxSKUSpecCount             = 5
+	maxSKUSpecKeyLength         = 20
+	maxSKUSpecValueLength       = 50
 )
+
+var skuCodePattern = regexp.MustCompile(`^[A-Z0-9][A-Z0-9_-]*$`)
 
 // CreateProductInput 表示创建商品时业务层需要的数据。
 //
@@ -36,6 +44,27 @@ type ListProductsInput struct {
 	Page     int
 	PageSize int
 	Name     string
+}
+
+type CreateSKUInput struct {
+	ProductID uint64
+	Code      string
+	Specs     map[string]string
+	PriceCent int64
+	Stock     int64
+}
+
+type ListSKUInput struct {
+	Page     int
+	PageSize int
+	Name     string
+}
+
+type UpdateSKUInput struct {
+	Code      string
+	Specs     map[string]string
+	PriceCent int64
+	Stock     int64
 }
 
 // ProductService 负责商品和 SKU 的业务规则。
@@ -78,7 +107,7 @@ func (s *ProductService) CreateProduct(ctx context.Context, input CreateProductI
 }
 
 // ListProducts 查询商品列表；input 为 nil 时使用全部默认值。
-func (s *ProductService) ListProducts(ctx context.Context, input *ListProductsInput) ([]model.Product, error) {
+func (s *ProductService) ListProducts(ctx context.Context, input *ListProductsInput) (int64, []model.Product, error) {
 	log.Printf("[Service] 开始处理商品列表业务：input=%+v", input)
 
 	page := 1
@@ -96,20 +125,20 @@ func (s *ProductService) ListProducts(ctx context.Context, input *ListProductsIn
 	log.Printf("[Service] 商品列表参数处理完成: page=%d page_size=%d name=%q", page, pageSize, name)
 	if page < 1 || pageSize < 1 || pageSize > 100 {
 		log.Printf("[Service] 商品列表参数校验失败：page=%d page_size=%d", page, pageSize)
-		return nil, model.ErrInvalidProductQuery
+		return 0, nil, model.ErrInvalidProductQuery
 	}
 
-	products, err := s.repository.ListProducts(ctx, repositories.ListProductsQuery{
+	total, products, err := s.repository.ListProducts(ctx, repositories.ListProductsQuery{
 		Page:     page,
 		PageSize: pageSize,
 		Name:     name,
 	})
 	if err != nil {
 		log.Printf("[Service] Repository 查询商品列表失败: %v", err)
-		return nil, fmt.Errorf("查询商品列表：%w", err)
+		return 0, nil, fmt.Errorf("查询商品列表：%w", err)
 	}
 	log.Printf("[Service] 商品列表业务处理完成：count=%d", len(products))
-	return products, nil
+	return total, products, nil
 }
 
 // GetProduct 根据商品 ID 查询单个商品。
@@ -165,4 +194,160 @@ func (s *ProductService) DeleteProduct(ctx context.Context, productID uint64) er
 		return fmt.Errorf("删除商品：%w", err)
 	}
 	return nil
+}
+
+func (s *ProductService) CreateSKU(ctx context.Context, input CreateSKUInput) (model.SKU, error) {
+	if input.ProductID == 0 {
+		return model.SKU{}, model.ErrInvalidProductID
+	}
+
+	code := strings.TrimSpace(input.Code)
+	codeLength := utf8.RuneCountInString(code)
+	if codeLength < minSKUCodeLength || codeLength > maxSKUCodeLength || !skuCodePattern.MatchString(code) {
+		return model.SKU{}, model.ErrInvalidSKUCode
+	}
+
+	if len(input.Specs) < 1 || len(input.Specs) > maxSKUSpecCount {
+		return model.SKU{}, model.ErrInvalidSKUSpecs
+	}
+	specs := make(map[string]string, len(input.Specs))
+	for key, value := range input.Specs {
+		key = strings.TrimSpace(key)
+		value = strings.TrimSpace(value)
+		if key == "" || utf8.RuneCountInString(key) > maxSKUSpecKeyLength ||
+			value == "" || utf8.RuneCountInString(value) > maxSKUSpecValueLength {
+			return model.SKU{}, model.ErrInvalidSKUSpecs
+		}
+		specs[key] = value
+	}
+
+	if input.PriceCent <= 0 {
+		return model.SKU{}, model.ErrInvalidSKUPrice
+	}
+	if input.Stock < 0 {
+		return model.SKU{}, model.ErrInvalidSKUStock
+	}
+
+	if _, err := s.repository.GetProduct(ctx, input.ProductID); err != nil {
+		return model.SKU{}, fmt.Errorf("查询 SKU 所属商品：%w", err)
+	}
+
+	sku, err := s.repository.CreateSKU(ctx, model.SKU{
+		ProductID: input.ProductID,
+		Code:      code,
+		Specs:     specs,
+		PriceCent: input.PriceCent,
+		Stock:     input.Stock,
+		Status:    model.SKUStatusActive,
+	})
+	if err != nil {
+		return model.SKU{}, fmt.Errorf("创建 SKU：%w", err)
+	}
+	return sku, nil
+}
+
+func (s *ProductService) GetSKU(ctx context.Context, productID, skuID uint64) (model.SKU, error) {
+	if productID == 0 || skuID == 0 {
+		return model.SKU{}, model.ErrInvalidProductID
+	}
+	sku, err := s.repository.GetSKU(ctx, productID, skuID)
+	if err != nil {
+		return model.SKU{}, fmt.Errorf("查询 SKU：%w", err)
+	}
+	return sku, nil
+}
+
+func (s *ProductService) ListSKU(ctx context.Context, productID uint64, input *ListSKUInput) (int64, []model.SKU, error) {
+	if productID == 0 {
+		return 0, nil, model.ErrInvalidProductID
+	}
+	page, pageSize, name := 1, 20, ""
+	if input != nil {
+		if input.Page != 0 {
+			page = input.Page
+		}
+		if input.PageSize != 0 {
+			pageSize = input.PageSize
+		}
+		name = strings.TrimSpace(input.Name)
+	}
+	if page < 1 || pageSize < 1 || pageSize > 100 {
+		return 0, nil, model.ErrInvalidProductQuery
+	}
+	total, items, err := s.repository.ListSKU(ctx, productID, repositories.ListSKUQuery{Page: page, PageSize: pageSize, Name: name})
+	if err != nil {
+		return 0, nil, fmt.Errorf("查询 SKU 列表：%w", err)
+	}
+	return total, items, nil
+}
+
+func (s *ProductService) UpdateSKU(ctx context.Context, productID, skuID uint64, input *UpdateSKUInput) (model.SKU, error) {
+	if productID == 0 || skuID == 0 || input == nil {
+		return model.SKU{}, model.ErrInvalidProductID
+	}
+	fields := repositories.UpdateSKUFields{}
+	if input.Code != "" {
+		code := strings.TrimSpace(input.Code)
+		if !skuCodePattern.MatchString(code) || utf8.RuneCountInString(code) < minSKUCodeLength || utf8.RuneCountInString(code) > maxSKUCodeLength {
+			return model.SKU{}, model.ErrInvalidSKUCode
+		}
+		fields.Code = &code
+	}
+	if input.Specs != nil {
+		if len(input.Specs) < 1 || len(input.Specs) > maxSKUSpecCount {
+			return model.SKU{}, model.ErrInvalidSKUSpecs
+		}
+		specs := make(map[string]string, len(input.Specs))
+		for key, value := range input.Specs {
+			key = strings.TrimSpace(key)
+			value = strings.TrimSpace(value)
+			if key == "" || utf8.RuneCountInString(key) > maxSKUSpecKeyLength ||
+				value == "" || utf8.RuneCountInString(value) > maxSKUSpecValueLength {
+				return model.SKU{}, model.ErrInvalidSKUSpecs
+			}
+			specs[key] = value
+		}
+		fields.Specs = specs
+	}
+	if input.PriceCent != 0 {
+		if input.PriceCent <= 0 {
+			return model.SKU{}, model.ErrInvalidSKUPrice
+		}
+		fields.PriceCent = &input.PriceCent
+	}
+	if input.Stock != 0 {
+		if input.Stock < 0 {
+			return model.SKU{}, model.ErrInvalidSKUStock
+		}
+		fields.Stock = &input.Stock
+	}
+	item, err := s.repository.UpdateSKU(ctx, productID, skuID, fields)
+	if err != nil {
+		return model.SKU{}, fmt.Errorf("更新 SKU：%w", err)
+	}
+	return item, nil
+}
+
+func (s *ProductService) DeleteSKU(ctx context.Context, productID, skuID uint64) error {
+	if productID == 0 || skuID == 0 {
+		return model.ErrInvalidProductID
+	}
+	if err := s.repository.DeleteSKU(ctx, productID, skuID); err != nil {
+		return fmt.Errorf("删除 SKU：%w", err)
+	}
+	return nil
+}
+
+func (s *ProductService) UpdateSKUStatus(ctx context.Context, productID, skuID uint64, status model.SKUStatus) (model.SKU, error) {
+	if productID == 0 || skuID == 0 {
+		return model.SKU{}, model.ErrInvalidProductID
+	}
+	if status != model.SKUStatusActive && status != model.SKUStatusInactive {
+		return model.SKU{}, model.ErrInvalidSKUStatus
+	}
+	sku, err := s.repository.UpdateSKUStatus(ctx, productID, skuID, status)
+	if err != nil {
+		return model.SKU{}, fmt.Errorf("更新 SKU 状态：%w", err)
+	}
+	return sku, nil
 }

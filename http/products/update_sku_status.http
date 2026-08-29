@@ -1,0 +1,11 @@
+### 停用 SKU
+PATCH {{baseUrl}}/api/v1/admin/products/1/skus/1/status
+Content-Type: application/json
+
+{"status":"inactive"}
+
+### 启用 SKU
+PATCH {{baseUrl}}/api/v1/admin/products/1/skus/1/status
+Content-Type: application/json
+
+{"status":"active"}
