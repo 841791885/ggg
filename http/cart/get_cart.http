@@ -1,0 +1,12 @@
+### 获取购物车接口使用的登录凭证
+# @name cartLogin
+POST {{baseUrl}}/api/v1/auth/login
+Content-Type: application/json
+
+{"login":"admin","password":"12345678"}
+
+###
+
+### 查询购物车（先执行上面的 cartLogin）
+GET {{baseUrl}}/api/v1/admin/cart?user_id=1
+Authorization: Bearer {{cartLogin.response.body.$.data.access_token}}

@@ -1,15 +1,28 @@
+### 获取商品接口使用的登录凭证
+# @name productLogin
+POST {{baseUrl}}/api/v1/auth/login
+Content-Type: application/json
+
+{"login":"admin","password":"12345678"}
+
+###
+
 ### 不传参数时使用 page=1、page_size=20
 GET {{baseUrl}}/api/v1/admin/products
+Authorization: Bearer {{productLogin.response.body.$.data.access_token}}
 Accept: application/json
 
 ### 使用分页参数查询
 GET {{baseUrl}}/api/v1/admin/products?page=1&page_size=10
+Authorization: Bearer {{productLogin.response.body.$.data.access_token}}
 Accept: application/json
 
 ### 按照名称筛选
 GET {{baseUrl}}/api/v1/admin/products?page=1&page_size=20&name=Go
+Authorization: Bearer {{productLogin.response.body.$.data.access_token}}
 Accept: application/json
 
 ### 使用非法分页参数调试参数校验
 GET {{baseUrl}}/api/v1/admin/products?page=0&page_size=20
+Authorization: Bearer {{productLogin.response.body.$.data.access_token}}
 Accept: application/json

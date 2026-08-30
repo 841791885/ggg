@@ -1,5 +1,15 @@
+### 获取商品接口使用的登录凭证
+# @name productLogin
+POST {{baseUrl}}/api/v1/auth/login
+Content-Type: application/json
+
+{"login":"admin","password":"12345678"}
+
+###
+
 ### 创建商品
 POST {{baseUrl}}/api/v1/admin/products
+Authorization: Bearer {{productLogin.response.body.$.data.access_token}}
 Content-Type: application/json
 Accept: application/json
 

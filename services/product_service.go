@@ -79,6 +79,7 @@ func NewProductService(repository repositories.Repository) *ProductService {
 	return &ProductService{repository: repository}
 }
 
+// CreateProduct 校验并创建商品。
 // CreateProduct 校验并创建草稿商品。
 func (s *ProductService) CreateProduct(ctx context.Context, input CreateProductInput) (model.Product, error) {
 	name := strings.TrimSpace(input.Name)
@@ -141,6 +142,7 @@ func (s *ProductService) ListProducts(ctx context.Context, input *ListProductsIn
 	return total, products, nil
 }
 
+// GetProduct 根据商品 ID 查询商品。
 // GetProduct 根据商品 ID 查询单个商品。
 func (s *ProductService) GetProduct(ctx context.Context, productID uint64) (*model.Product, error) {
 	product, err := s.repository.GetProduct(ctx, productID)
@@ -181,6 +183,7 @@ func (s *ProductService) UpdateProduct(ctx context.Context, productID uint64, in
 	return updatedProduct, nil
 }
 
+// DeleteProduct 软删除商品，并阻止删除在售商品。
 func (s *ProductService) DeleteProduct(ctx context.Context, productID uint64) error {
 	product, err := s.repository.GetProduct(ctx, productID)
 	if err != nil {
@@ -246,6 +249,7 @@ func (s *ProductService) CreateSKU(ctx context.Context, input CreateSKUInput) (m
 	return sku, nil
 }
 
+// GetSKU 查询指定商品下的 SKU。
 func (s *ProductService) GetSKU(ctx context.Context, productID, skuID uint64) (model.SKU, error) {
 	if productID == 0 || skuID == 0 {
 		return model.SKU{}, model.ErrInvalidProductID
@@ -281,6 +285,7 @@ func (s *ProductService) ListSKU(ctx context.Context, productID uint64, input *L
 	return total, items, nil
 }
 
+// UpdateSKU 校验并部分更新 SKU 信息。
 func (s *ProductService) UpdateSKU(ctx context.Context, productID, skuID uint64, input *UpdateSKUInput) (model.SKU, error) {
 	if productID == 0 || skuID == 0 || input == nil {
 		return model.SKU{}, model.ErrInvalidProductID
@@ -338,6 +343,7 @@ func (s *ProductService) DeleteSKU(ctx context.Context, productID, skuID uint64)
 	return nil
 }
 
+// UpdateSKUStatus 修改 SKU 的启用状态。
 func (s *ProductService) UpdateSKUStatus(ctx context.Context, productID, skuID uint64, status model.SKUStatus) (model.SKU, error) {
 	if productID == 0 || skuID == 0 {
 		return model.SKU{}, model.ErrInvalidProductID

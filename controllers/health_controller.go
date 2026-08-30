@@ -24,6 +24,7 @@ func NewHealthController(database databasePinger, timeout time.Duration) *Health
 	return &HealthController{database: database, timeout: timeout}
 }
 
+// Ping 检查 HTTP 服务进程是否存活，不访问数据库。
 // Ping 返回基础存活响应。
 func (h *HealthController) Ping(c *gin.Context) {
 	respondSuccess(c, http.StatusOK, gin.H{"message": "pong"})

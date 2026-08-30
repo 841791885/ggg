@@ -1,5 +1,15 @@
+### 获取商品接口使用的登录凭证
+# @name productLogin
+POST {{baseUrl}}/api/v1/auth/login
+Content-Type: application/json
+
+{"login":"admin","password":"12345678"}
+
+###
+
 ### 为商品创建 SKU
 POST {{baseUrl}}/api/v1/admin/products/1/skus
+Authorization: Bearer {{productLogin.response.body.$.data.access_token}}
 Content-Type: application/json
 Accept: application/json
 
@@ -14,6 +24,7 @@ Accept: application/json
 
 ### product_id 非法
 POST {{baseUrl}}/api/v1/admin/products/abc/skus
+Authorization: Bearer {{productLogin.response.body.$.data.access_token}}
 Content-Type: application/json
 Accept: application/json
 
@@ -28,6 +39,7 @@ Accept: application/json
 
 ### SKU 参数非法
 POST {{baseUrl}}/api/v1/admin/products/1/skus
+Authorization: Bearer {{productLogin.response.body.$.data.access_token}}
 Content-Type: application/json
 Accept: application/json
 

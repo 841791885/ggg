@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"ggg/controllers"
+	"ggg/middleware"
 
 	"github.com/gin-gonic/gin"
 )
@@ -12,6 +13,9 @@ import (
 func New(
 	healthController *controllers.HealthController,
 	productController *controllers.ProductController,
+	cartController *controllers.CartController,
+	userController *controllers.UserController,
+	jwtSecret string,
 ) (*gin.Engine, error) {
 	// gin.Default 默认安装访问日志和 panic 恢复两个中间件。
 	router := gin.Default()
@@ -22,8 +26,11 @@ func New(
 
 	router.GET("/ping", healthController.Ping)
 	router.GET("/health/ready", healthController.Ready)
+	router.POST("/api/v1/auth/register", userController.Register)
+	router.POST("/api/v1/auth/login", userController.Login)
 
 	admin := router.Group("/api/v1/admin")
+	admin.Use(middleware.JWTAuth(jwtSecret))
 	admin.POST("/products", productController.CreateProduct)
 	admin.GET("/products", productController.ListProducts)
 	admin.GET("/products/:product_id", productController.GetProduct)
@@ -36,6 +43,9 @@ func New(
 	admin.PATCH("/products/:product_id/skus/:sku_id", productController.UpdateSKU)
 	admin.DELETE("/products/:product_id/skus/:sku_id", productController.DeleteSKU)
 	admin.PATCH("/products/:product_id/skus/:sku_id/status", productController.UpdateSKUStatus)
+
+	admin.POST("/cart/items", cartController.AddItem)
+	admin.GET("/cart", cartController.GetCart)
 
 	return router, nil
 }

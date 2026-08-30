@@ -11,23 +11,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// Repository 定义当前阶段业务层需要的数据持久化能力。
-// 业务层依赖此接口，不直接依赖下面的 MySQLRepository 实现。
-type Repository interface {
-	CreateProduct(ctx context.Context, product model.Product) (model.Product, error)
-	ListProducts(ctx context.Context, query ListProductsQuery) (int64, []model.Product, error)
-	GetProduct(ctx context.Context, productID uint64) (*model.Product, error)
-	UpdateProduct(ctx context.Context, productID uint64, fields UpdateProductFields) (model.Product, error)
-	DeleteProduct(ctx context.Context, productID uint64) error
-
-	CreateSKU(ctx context.Context, sku model.SKU) (model.SKU, error)
-	GetSKU(ctx context.Context, productID, skuID uint64) (model.SKU, error)
-	ListSKU(ctx context.Context, productID uint64, query ListSKUQuery) (int64, []model.SKU, error)
-	UpdateSKU(ctx context.Context, productID, skuID uint64, fields UpdateSKUFields) (model.SKU, error)
-	DeleteSKU(ctx context.Context, productID, skuID uint64) error
-	UpdateSKUStatus(ctx context.Context, productID, skuID uint64, status model.SKUStatus) (model.SKU, error)
-}
-
 // UpdateProductFields 表示本次需要更新的商品字段，nil 表示不更新该字段。
 type UpdateProductFields struct {
 	Name        *string
@@ -66,6 +49,7 @@ func NewMySQLRepository(db *gorm.DB) *MySQLRepository {
 	return &MySQLRepository{db: db}
 }
 
+// CreateProduct 将商品写入 products 表，并返回数据库生成的字段。
 // CreateProduct 创建商品，ID 和时间由 MySQL 生成。
 func (r *MySQLRepository) CreateProduct(ctx context.Context, product model.Product) (model.Product, error) {
 	// 对应 SQL（具体字段顺序由 GORM 生成）：
@@ -118,6 +102,7 @@ func (r *MySQLRepository) ListProducts(ctx context.Context, query ListProductsQu
 	return total, products, nil
 }
 
+// GetProduct 从数据库读取一个未软删除的商品。
 // GetProduct 根据商品 ID 查询单个商品。
 func (r *MySQLRepository) GetProduct(ctx context.Context, productID uint64) (*model.Product, error) {
 	var product model.Product
@@ -167,6 +152,7 @@ func (r *MySQLRepository) UpdateProduct(ctx context.Context, productID uint64, f
 	return *product, nil
 }
 
+// DeleteProduct 对商品执行软删除。
 func (r *MySQLRepository) DeleteProduct(ctx context.Context, productID uint64) error {
 	// 对应 SQL（Product 使用 gorm.DeletedAt，所以执行软删除）：
 	// UPDATE products SET deleted_at = ?
@@ -198,6 +184,7 @@ func (r *MySQLRepository) CreateSKU(ctx context.Context, sku model.SKU) (model.S
 	return sku, nil
 }
 
+// GetSKU 查询指定商品下的单个 SKU。
 func (r *MySQLRepository) GetSKU(ctx context.Context, productID, skuID uint64) (model.SKU, error) {
 	var sku model.SKU
 	err := r.db.WithContext(ctx).Where("id = ? AND product_id = ?", skuID, productID).First(&sku).Error
@@ -210,6 +197,19 @@ func (r *MySQLRepository) GetSKU(ctx context.Context, productID, skuID uint64) (
 	return sku, nil
 }
 
+func (r *MySQLRepository) GetSKUByID(ctx context.Context, skuID uint64) (model.SKU, error) {
+	var sku model.SKU
+	err := r.db.WithContext(ctx).First(&sku, skuID).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return model.SKU{}, model.ErrSKUNotFound
+	}
+	if err != nil {
+		return model.SKU{}, fmt.Errorf("查询 SKU：%w", err)
+	}
+	return sku, nil
+}
+
+// ListSKU 查询商品下的 SKU 列表并返回总数。
 func (r *MySQLRepository) ListSKU(ctx context.Context, productID uint64, query ListSKUQuery) (int64, []model.SKU, error) {
 	items := make([]model.SKU, 0)
 	db := r.db.WithContext(ctx).Where("product_id = ?", productID)
@@ -257,6 +257,7 @@ func (r *MySQLRepository) UpdateSKU(ctx context.Context, productID, skuID uint64
 	return r.GetSKU(ctx, productID, skuID)
 }
 
+// DeleteSKU 软删除指定商品下的 SKU。
 func (r *MySQLRepository) DeleteSKU(ctx context.Context, productID, skuID uint64) error {
 	result := r.db.WithContext(ctx).Where("id = ? AND product_id = ?", skuID, productID).Delete(&model.SKU{})
 	if result.Error != nil {

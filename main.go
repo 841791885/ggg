@@ -42,8 +42,16 @@ func main() {
 	productRepository := repositories.NewMySQLRepository(gormDB)
 	productService := services.NewProductService(productRepository)
 	productController := controllers.NewProductController(productService)
+	cartService := services.NewCartService(productRepository)
+	cartController := controllers.NewCartController(cartService)
+	userService := services.NewUserService(productRepository)
+	authService := services.NewAuthService(productRepository, appConfig.Auth.JWTSecret, appConfig.Auth.TokenTTL.Value())
+	userController := controllers.NewUserController(struct {
+		*services.UserService
+		*services.AuthService
+	}{userService, authService})
 
-	router, err := routes.New(healthController, productController)
+	router, err := routes.New(healthController, productController, cartController, userController, appConfig.Auth.JWTSecret)
 	if err != nil {
 		log.Fatalf("创建路由失败: %v", err)
 	}

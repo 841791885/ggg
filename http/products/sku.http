@@ -1,14 +1,27 @@
+### 获取商品接口使用的登录凭证
+# @name productLogin
+POST {{baseUrl}}/api/v1/auth/login
+Content-Type: application/json
+
+{"login":"admin","password":"12345678"}
+
+###
+
 ### 查询商品下的单个 SKU
 GET {{baseUrl}}/api/v1/admin/products/1/skus/1
+Authorization: Bearer {{productLogin.response.body.$.data.access_token}}
 
 ### 查询不存在的 SKU
 GET {{baseUrl}}/api/v1/admin/products/1/skus/999999
+Authorization: Bearer {{productLogin.response.body.$.data.access_token}}
 
 ### 查询商品的 SKU 列表
 GET {{baseUrl}}/api/v1/admin/products/1/skus?page=1&page_size=20
+Authorization: Bearer {{productLogin.response.body.$.data.access_token}}
 
 ### 修改 SKU
 PATCH {{baseUrl}}/api/v1/admin/products/1/skus/1
+Authorization: Bearer {{productLogin.response.body.$.data.access_token}}
 Content-Type: application/json
 
 {
@@ -22,3 +35,4 @@ Content-Type: application/json
 
 ### 删除 SKU
 DELETE {{baseUrl}}/api/v1/admin/products/1/skus/1
+Authorization: Bearer {{productLogin.response.body.$.data.access_token}}

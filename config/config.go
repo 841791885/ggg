@@ -38,6 +38,13 @@ func (d Duration) Value() time.Duration {
 type Config struct {
 	Server   ServerConfig   `yaml:"server"`
 	Database DatabaseConfig `yaml:"database"`
+	Auth     AuthConfig     `yaml:"auth"`
+}
+
+// AuthConfig 表示 JWT 认证配置。
+type AuthConfig struct {
+	JWTSecret string   `yaml:"jwt_secret"`
+	TokenTTL  Duration `yaml:"token_ttl"`
 }
 
 // ServerConfig 表示 HTTP 服务配置。
@@ -151,6 +158,9 @@ func (c Config) Validate() error {
 		c.Database.ConnectionMaxIdleTime.Value() <= 0 ||
 		c.Database.ConnectTimeout.Value() <= 0 {
 		return errors.New("数据库连接超时配置必须大于 0")
+	}
+	if c.Auth.JWTSecret == "" || c.Auth.TokenTTL.Value() <= 0 {
+		return errors.New("auth.jwt_secret 不能为空且 auth.token_ttl 必须大于 0")
 	}
 	return nil
 }
