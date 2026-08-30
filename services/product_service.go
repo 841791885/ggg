@@ -3,7 +3,7 @@ package services
 import (
 	"context"
 	"fmt"
-	"log"
+	"go.uber.org/zap"
 	"regexp"
 	"strings"
 	"unicode/utf8"
@@ -109,7 +109,7 @@ func (s *ProductService) CreateProduct(ctx context.Context, input CreateProductI
 
 // ListProducts 查询商品列表；input 为 nil 时使用全部默认值。
 func (s *ProductService) ListProducts(ctx context.Context, input *ListProductsInput) (int64, []model.Product, error) {
-	log.Printf("[Service] 开始处理商品列表业务：input=%+v", input)
+	zap.S().Debugf("开始处理商品列表业务：input=%+v", input)
 
 	page := 1
 	pageSize := 20
@@ -123,9 +123,9 @@ func (s *ProductService) ListProducts(ctx context.Context, input *ListProductsIn
 		name = strings.TrimSpace(input.Name)
 	}
 
-	log.Printf("[Service] 商品列表参数处理完成: page=%d page_size=%d name=%q", page, pageSize, name)
+	zap.S().Debugf("商品列表参数处理完成: page=%d page_size=%d name=%q", page, pageSize, name)
 	if page < 1 || pageSize < 1 || pageSize > 100 {
-		log.Printf("[Service] 商品列表参数校验失败：page=%d page_size=%d", page, pageSize)
+		zap.S().Warnf("商品列表参数校验失败：page=%d page_size=%d", page, pageSize)
 		return 0, nil, model.ErrInvalidProductQuery
 	}
 
@@ -135,10 +135,10 @@ func (s *ProductService) ListProducts(ctx context.Context, input *ListProductsIn
 		Name:     name,
 	})
 	if err != nil {
-		log.Printf("[Service] Repository 查询商品列表失败: %v", err)
+		zap.S().Errorf("[Service] Repository 查询商品列表失败: %v", err)
 		return 0, nil, fmt.Errorf("查询商品列表：%w", err)
 	}
-	log.Printf("[Service] 商品列表业务处理完成：count=%d", len(products))
+	zap.S().Debugf("商品列表业务处理完成：count=%d", len(products))
 	return total, products, nil
 }
 

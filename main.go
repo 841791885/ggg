@@ -12,9 +12,11 @@ import (
 	"ggg/config"
 	"ggg/controllers"
 	"ggg/database"
+	appLogger "ggg/logger"
 	"ggg/repositories"
 	"ggg/routes"
 	"ggg/services"
+	"go.uber.org/zap"
 )
 
 func main() {
@@ -23,6 +25,12 @@ func main() {
 	if err != nil {
 		log.Fatalf("启动失败: %v", err)
 	}
+	logger, err := appLogger.New(appConfig.Log)
+	if err != nil {
+		log.Fatalf("初始化日志失败: %v", err)
+	}
+	zap.ReplaceGlobals(logger)
+	defer logger.Sync()
 
 	// 数据库连接不能无限等待。这里使用配置中的超时时间限制首次连接过程。
 	databaseContext, cancelDatabase := context.WithTimeout(
@@ -32,7 +40,7 @@ func main() {
 	gormDB, sqlDB, err := database.OpenMySQL(databaseContext, appConfig.Database)
 	cancelDatabase()
 	if err != nil {
-		log.Fatalf("启动失败: %v", err)
+		zap.L().Fatal("启动失败", zap.Error(err))
 	}
 	defer sqlDB.Close()
 
@@ -53,7 +61,7 @@ func main() {
 
 	router, err := routes.New(healthController, productController, cartController, userController, appConfig.Auth.JWTSecret)
 	if err != nil {
-		log.Fatalf("创建路由失败: %v", err)
+		zap.L().Fatal("创建路由失败", zap.Error(err))
 	}
 
 	server := &http.Server{
@@ -76,7 +84,7 @@ func main() {
 	select {
 	case err := <-serverErrors:
 		if err != nil && !errors.Is(err, http.ErrServerClosed) {
-			log.Fatalf("HTTP 服务异常退出: %v", err)
+			zap.L().Fatal("HTTP 服务异常退出", zap.Error(err))
 		}
 		return
 	case <-shutdownSignal.Done():
@@ -89,10 +97,10 @@ func main() {
 	)
 	defer cancelShutdown()
 	if err := server.Shutdown(shutdownContext); err != nil {
-		log.Printf("HTTP 服务关闭失败: %v", err)
+		zap.L().Error("HTTP 服务关闭失败", zap.Error(err))
 	}
 
 	if err := <-serverErrors; err != nil && !errors.Is(err, http.ErrServerClosed) {
-		log.Printf("HTTP 服务退出错误: %v", err)
+		zap.L().Error("HTTP 服务退出错误", zap.Error(err))
 	}
 }

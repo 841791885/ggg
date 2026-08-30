@@ -6,7 +6,7 @@ import (
 	model "ggg/models"
 	"ggg/services"
 	"github.com/gin-gonic/gin"
-	"log"
+	"go.uber.org/zap"
 	"net/http"
 )
 
@@ -32,7 +32,7 @@ func (c *UserController) Login(ctx *gin.Context) {
 			respondError(ctx, http.StatusUnauthorized, err.Error())
 			return
 		}
-		log.Printf("用户登录失败: %v", err)
+		zap.S().Errorf("用户登录失败: %v", err)
 		respondError(ctx, http.StatusInternalServerError, "服务器内部错误")
 		return
 	}
@@ -60,7 +60,7 @@ func (c *UserController) Register(ctx *gin.Context) {
 		case errors.Is(err, model.ErrUsernameConflict), errors.Is(err, model.ErrEmailConflict):
 			respondError(ctx, http.StatusConflict, err.Error())
 		default:
-			log.Printf("用户注册失败: %v", err)
+			zap.S().Errorf("用户注册失败: %v", err)
 			respondError(ctx, http.StatusInternalServerError, "服务器内部错误")
 		}
 		return

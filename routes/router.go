@@ -17,8 +17,9 @@ func New(
 	userController *controllers.UserController,
 	jwtSecret string,
 ) (*gin.Engine, error) {
-	// gin.Default 默认安装访问日志和 panic 恢复两个中间件。
-	router := gin.Default()
+	// 使用自定义 Zap 请求日志，并保留 Gin 的 panic 恢复中间件。
+	router := gin.New()
+	router.Use(middleware.RequestLogger(), gin.Recovery())
 	// 当前服务只在本地直接访问，不信任任何反向代理传来的客户端 IP 头。
 	if err := router.SetTrustedProxies(nil); err != nil {
 		return nil, fmt.Errorf("配置可信代理：%w", err)

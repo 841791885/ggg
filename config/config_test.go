@@ -29,6 +29,12 @@ database:
   connection_max_lifetime: 30m
   connection_max_idle_time: 5m
   connect_timeout: 5s
+auth:
+  jwt_secret: "test-secret"
+  token_ttl: 2h
+log:
+  environment: "development"
+  level: "debug"
 `
 
 func TestLoadValidConfig(t *testing.T) {

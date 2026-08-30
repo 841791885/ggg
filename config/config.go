@@ -39,6 +39,13 @@ type Config struct {
 	Server   ServerConfig   `yaml:"server"`
 	Database DatabaseConfig `yaml:"database"`
 	Auth     AuthConfig     `yaml:"auth"`
+	Log      LogConfig      `yaml:"log"`
+}
+
+// LogConfig 表示应用日志环境和最低输出级别。
+type LogConfig struct {
+	Environment string `yaml:"environment"`
+	Level       string `yaml:"level"`
 }
 
 // AuthConfig 表示 JWT 认证配置。
@@ -161,6 +168,12 @@ func (c Config) Validate() error {
 	}
 	if c.Auth.JWTSecret == "" || c.Auth.TokenTTL.Value() <= 0 {
 		return errors.New("auth.jwt_secret 不能为空且 auth.token_ttl 必须大于 0")
+	}
+	if c.Log.Environment != "development" && c.Log.Environment != "production" {
+		return errors.New("log.environment 只能是 development 或 production")
+	}
+	if c.Log.Level == "" {
+		return errors.New("log.level 不能为空")
 	}
 	return nil
 }

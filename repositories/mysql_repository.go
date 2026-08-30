@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
+	"go.uber.org/zap"
 
 	model "ggg/models"
 
@@ -65,7 +65,7 @@ func (r *MySQLRepository) CreateProduct(ctx context.Context, product model.Produ
 // ListProducts 按名称筛选并分页查询商品，Page 从 1 开始。
 func (r *MySQLRepository) ListProducts(ctx context.Context, query ListProductsQuery) (int64, []model.Product, error) {
 	offset := (query.Page - 1) * query.PageSize
-	log.Printf(
+	zap.S().Debugf(
 		"[Repository] 开始查询商品列表: page=%d page_size=%d offset=%d name=%q",
 		query.Page,
 		query.PageSize,
@@ -94,11 +94,11 @@ func (r *MySQLRepository) ListProducts(ctx context.Context, query ListProductsQu
 		Limit(query.PageSize).
 		Offset(offset).
 		Find(&products).Error; err != nil {
-		log.Printf("[Repository] MySQL 查询商品列表失败: %v", err)
+		zap.S().Errorf("[Repository] MySQL 查询商品列表失败: %v", err)
 		return 0, nil, fmt.Errorf("查询商品列表：%w", err)
 	}
-	log.Printf("[Repository] MySQL 查询商品列表完成：count=%d", len(products))
-	log.Printf("[Repository] 查询到的商品：%+v", products)
+	zap.S().Debugf("MySQL 查询商品列表完成：count=%d", len(products))
+	zap.S().Debugf("查询到的商品：%+v", products)
 	return total, products, nil
 }
 

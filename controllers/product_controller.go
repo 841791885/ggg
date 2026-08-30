@@ -3,7 +3,7 @@ package controllers
 import (
 	"context"
 	"errors"
-	"log"
+	"go.uber.org/zap"
 	"net/http"
 	"strconv"
 
@@ -63,7 +63,7 @@ func (p *ProductController) CreateProduct(c *gin.Context) {
 			return
 		}
 
-		log.Printf("创建商品失败: %v", err)
+		zap.S().Errorf("创建商品失败: %v", err)
 		respondError(
 			c,
 			http.StatusInternalServerError,
@@ -71,18 +71,18 @@ func (p *ProductController) CreateProduct(c *gin.Context) {
 		)
 		return
 	}
-	log.Printf("[Controller] 商品列表参数绑定失败: %v", product)
+	zap.S().Debugf("商品创建完成: product_id=%d", product.ID)
 
 	respondSuccess(c, http.StatusCreated, newProductResponse(&product))
 }
 
 // ListProducts 处理 GET /api/v1/admin/products。
 func (p *ProductController) ListProducts(c *gin.Context) {
-	log.Printf("[Controller] 开始处理商品列表请求: query=%q", c.Request.URL.RawQuery)
+	zap.S().Debugf("开始处理商品列表请求: query=%q", c.Request.URL.RawQuery)
 
 	var query ListProductsQuery
 	if err := c.ShouldBindQuery(&query); err != nil {
-		log.Printf("[Controller] 商品列表参数绑定失败: %v", err)
+		zap.S().Errorf("[Controller] 商品列表参数绑定失败: %v", err)
 		respondError(c, http.StatusBadRequest, "查询参数格式不正确")
 		return
 	}
@@ -102,14 +102,14 @@ func (p *ProductController) ListProducts(c *gin.Context) {
 		}
 	}
 
-	log.Printf("[Controller] 调用 ProductService.ListProducts: input=%+v", input)
+	zap.S().Debugf("调用 ProductService.ListProducts: input=%+v", input)
 	total, products, err := p.service.ListProducts(c.Request.Context(), input)
 	if err != nil {
 		if errors.Is(err, model.ErrInvalidProductQuery) {
 			respondError(c, http.StatusBadRequest, err.Error())
 			return
 		}
-		log.Printf("查询商品列表失败: %v", err)
+		zap.S().Errorf("查询商品列表失败: %v", err)
 		respondError(c, http.StatusInternalServerError, "服务器内部错误")
 		return
 	}
@@ -119,7 +119,7 @@ func (p *ProductController) ListProducts(c *gin.Context) {
 	for i := range products {
 		response[i] = newProductResponse(&products[i])
 	}
-	log.Printf("[Controller] 商品列表请求处理完成：count=%d", len(response))
+	zap.S().Debugf("商品列表请求处理完成: count=%d", len(response))
 	respondSuccess(c, http.StatusOK, gin.H{"total": total, "list": response})
 }
 
@@ -138,7 +138,7 @@ func (p *ProductController) GetProduct(c *gin.Context) {
 			return
 		}
 
-		log.Printf("查询商品失败: product_id=%d err=%v", productID, err)
+		zap.S().Errorf("查询商品失败: product_id=%d err=%v", productID, err)
 		respondError(c, http.StatusInternalServerError, "服务器内部错误")
 		return
 	}
@@ -175,7 +175,7 @@ func (p *ProductController) UpdateProduct(c *gin.Context) {
 			return
 		}
 
-		log.Printf("更新商品失败: product_id=%d err=%v", productID, err)
+		zap.S().Errorf("更新商品失败: product_id=%d err=%v", productID, err)
 		respondError(c, http.StatusInternalServerError, "服务器内部错误")
 		return
 	}
@@ -200,7 +200,7 @@ func (p *ProductController) DeleteProduct(c *gin.Context) {
 			return
 		}
 
-		log.Printf("删除商品失败: product_id=%d err=%v", productID, err)
+		zap.S().Errorf("删除商品失败: product_id=%d err=%v", productID, err)
 		respondError(c, http.StatusInternalServerError, "服务器内部错误")
 		return
 	}
@@ -248,7 +248,7 @@ func (p *ProductController) CreateSKU(c *gin.Context) {
 			return
 		}
 
-		log.Printf("创建 SKU 失败: %v", err)
+		zap.S().Errorf("创建 SKU 失败: %v", err)
 		respondError(
 			c,
 			http.StatusInternalServerError,
@@ -277,7 +277,7 @@ func (p *ProductController) GetSKU(c *gin.Context) {
 			respondError(c, http.StatusNotFound, err.Error())
 			return
 		}
-		log.Printf("查询 SKU 失败: product_id=%d sku_id=%d err=%v", productID, skuID, err)
+		zap.S().Errorf("查询 SKU 失败: product_id=%d sku_id=%d err=%v", productID, skuID, err)
 		respondError(c, http.StatusInternalServerError, "服务器内部错误")
 		return
 	}
@@ -400,7 +400,7 @@ func (p *ProductController) UpdateSKUStatus(c *gin.Context) {
 			respondError(c, http.StatusNotFound, err.Error())
 			return
 		}
-		log.Printf("更新 SKU 状态失败: product_id=%d sku_id=%d err=%v", productID, skuID, err)
+		zap.S().Errorf("更新 SKU 状态失败: product_id=%d sku_id=%d err=%v", productID, skuID, err)
 		respondError(c, http.StatusInternalServerError, "服务器内部错误")
 		return
 	}

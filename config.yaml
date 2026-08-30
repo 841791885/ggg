@@ -20,3 +20,7 @@ database:
 auth:
   jwt_secret: "learning-gomall-secret-change-me"
   token_ttl: 2h
+
+log:
+  environment: "development"
+  level: "debug"

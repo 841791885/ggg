@@ -3,7 +3,7 @@ package controllers
 import (
 	"context"
 	"errors"
-	"log"
+	"go.uber.org/zap"
 	"net/http"
 
 	model "ggg/models"
@@ -27,7 +27,7 @@ func (c *CartController) GetCart(ctx *gin.Context) {
 	}
 	cart, err := c.service.GetCart(ctx.Request.Context(), userID)
 	if err != nil {
-		log.Printf("查询购物车失败: user_id=%d err=%v", userID, err)
+		zap.S().Errorf("查询购物车失败: user_id=%d err=%v", userID, err)
 		respondError(ctx, http.StatusInternalServerError, "服务器内部错误")
 		return
 	}
@@ -69,7 +69,7 @@ func (c *CartController) AddItem(ctx *gin.Context) {
 		case errors.Is(err, model.ErrSKUInactive), errors.Is(err, model.ErrInsufficientStock):
 			respondError(ctx, http.StatusConflict, err.Error())
 		default:
-			log.Printf("加入购物车失败: %v", err)
+			zap.S().Errorf("加入购物车失败: %v", err)
 			respondError(ctx, http.StatusInternalServerError, "服务器内部错误")
 		}
 		return
