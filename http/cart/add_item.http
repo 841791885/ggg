@@ -8,12 +8,11 @@ Content-Type: application/json
 ###
 
 ### 加入购物车（先执行上面的 cartLogin）
-POST {{baseUrl}}/api/v1/admin/cart/items
+POST {{baseUrl}}/api/v1/cart/items
 Authorization: Bearer {{cartLogin.response.body.$.data.access_token}}
 Content-Type: application/json
 
 {
-  "user_id": 1,
   "sku_id": 1,
   "quantity": 2
 }

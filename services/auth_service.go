@@ -54,7 +54,7 @@ func (s *AuthService) Login(ctx context.Context, input LoginInput) (LoginRespons
 		return LoginResponse{}, model.ErrInvalidCredentials
 	}
 	expires := time.Now().Add(s.tokenTTL)
-	token, err := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{"sub": user.ID, "exp": expires.Unix(), "iat": time.Now().Unix()}).SignedString(s.jwtSecret)
+	token, err := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{"sub": user.ID, "role": user.Role, "exp": expires.Unix(), "iat": time.Now().Unix()}).SignedString(s.jwtSecret)
 	if err != nil {
 		return LoginResponse{}, fmt.Errorf("生成登录令牌：%w", err)
 	}

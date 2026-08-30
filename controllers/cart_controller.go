@@ -5,7 +5,6 @@ import (
 	"errors"
 	"log"
 	"net/http"
-	"strconv"
 
 	model "ggg/models"
 	"ggg/services"
@@ -20,9 +19,10 @@ type cartService interface {
 
 // GetCart 处理查询用户购物车请求。
 func (c *CartController) GetCart(ctx *gin.Context) {
-	userID, err := strconv.ParseUint(ctx.Query("user_id"), 10, 64)
-	if err != nil || userID == 0 {
-		respondError(ctx, http.StatusBadRequest, "user_id 必须是大于 0 的整数")
+	userIDValue, exists := ctx.Get("user_id")
+	userID, ok := userIDValue.(uint64)
+	if !exists || !ok || userID == 0 {
+		respondError(ctx, http.StatusUnauthorized, "用户身份不存在")
 		return
 	}
 	cart, err := c.service.GetCart(ctx.Request.Context(), userID)
@@ -46,13 +46,19 @@ func NewCartController(service cartService) *CartController { return &CartContro
 
 // AddItem 处理将 SKU 加入购物车的请求。
 func (c *CartController) AddItem(ctx *gin.Context) {
+	userIDValue, exists := ctx.Get("user_id")
+	userID, ok := userIDValue.(uint64)
+	if !exists || !ok || userID == 0 {
+		respondError(ctx, http.StatusUnauthorized, "用户身份不存在")
+		return
+	}
 	var request AddCartItemRequest
 	if err := ctx.ShouldBindJSON(&request); err != nil {
 		respondError(ctx, http.StatusBadRequest, "请求 JSON 格式不正确")
 		return
 	}
 	item, err := c.service.AddItem(ctx.Request.Context(), services.AddCartItemInput{
-		UserID: request.UserID, SKUID: request.SKUID, Quantity: request.Quantity,
+		UserID: userID, SKUID: request.SKUID, Quantity: request.Quantity,
 	})
 	if err != nil {
 		switch {

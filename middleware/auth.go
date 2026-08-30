@@ -38,6 +38,33 @@ func JWTAuth(secret string) gin.HandlerFunc {
 			return
 		}
 		c.Set("user_id", uint64(sub))
+		role, ok := claims["role"].(string)
+		if !ok || role == "" {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"code": http.StatusUnauthorized, "message": "登录凭证缺少角色信息"})
+			return
+		}
+		c.Set("user_role", role)
+		c.Next()
+	}
+}
+
+// RequireRole 只允许指定角色继续访问后续路由。
+func RequireRole(allowedRoles ...string) gin.HandlerFunc {
+	allowed := make(map[string]struct{}, len(allowedRoles))
+	for _, role := range allowedRoles {
+		allowed[role] = struct{}{}
+	}
+	return func(c *gin.Context) {
+		role, exists := c.Get("user_role")
+		roleName, ok := role.(string)
+		if !exists || !ok {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"code": http.StatusUnauthorized, "message": "用户身份不存在"})
+			return
+		}
+		if _, ok := allowed[roleName]; !ok {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"code": http.StatusForbidden, "message": "没有访问该资源的权限"})
+			return
+		}
 		c.Next()
 	}
 }

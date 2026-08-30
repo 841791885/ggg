@@ -8,5 +8,5 @@ Content-Type: application/json
 ###
 
 ### 查询购物车（先执行上面的 cartLogin）
-GET {{baseUrl}}/api/v1/admin/cart?user_id=1
+GET {{baseUrl}}/api/v1/cart
 Authorization: Bearer {{cartLogin.response.body.$.data.access_token}}

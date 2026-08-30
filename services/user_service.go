@@ -50,7 +50,7 @@ func (s *UserService) Register(ctx context.Context, input RegisterUserInput) (mo
 	if err != nil {
 		return model.User{}, fmt.Errorf("加密密码：%w", err)
 	}
-	user, err := s.repository.CreateUser(ctx, model.User{Username: username, Email: email, PasswordHash: string(hash), Status: model.UserStatusActive})
+	user, err := s.repository.CreateUser(ctx, model.User{Username: username, Email: email, PasswordHash: string(hash), Role: model.UserRoleCustomer, Status: model.UserStatusActive})
 	if err != nil {
 		return model.User{}, fmt.Errorf("注册用户：%w", err)
 	}

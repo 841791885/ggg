@@ -11,11 +11,12 @@ type UserResponse struct {
 	Username  string           `json:"username"`
 	Email     string           `json:"email"`
 	Status    model.UserStatus `json:"status"`
+	Role      model.UserRole   `json:"role"`
 	CreatedAt time.Time        `json:"created_at"`
 	UpdatedAt time.Time        `json:"updated_at"`
 }
 
 // newUserResponse 将用户模型转换为对外响应结构。
 func newUserResponse(user *model.User) UserResponse {
-	return UserResponse{ID: user.ID, Username: user.Username, Email: user.Email, Status: user.Status, CreatedAt: user.CreatedAt, UpdatedAt: user.UpdatedAt}
+	return UserResponse{ID: user.ID, Username: user.Username, Email: user.Email, Status: user.Status, Role: user.Role, CreatedAt: user.CreatedAt, UpdatedAt: user.UpdatedAt}
 }
