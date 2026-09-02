@@ -16,7 +16,7 @@ var (
 	// ErrEmptyProductUpdate 表示修改商品时没有提供任何可修改字段。
 	ErrEmptyProductUpdate  = errors.New("至少提供一个需要修改的商品字段")
 	ErrInvalidProductID    = errors.New("商品 ID 必须大于 0")
-	ErrInvalidSKUCode      = errors.New("SKU 编码格式不正确")
+	ErrInvalidSKUCode      = errors.New("SKU 编码必须为 3 到 32 位，只能使用大写字母、数字、下划线和连字符")
 	ErrInvalidSKUSpecs     = errors.New("SKU 规格必须为 1 到 5 项，且 key 和 value 不能为空")
 	ErrInvalidSKUPrice     = errors.New("SKU 价格必须大于 0")
 	ErrInvalidSKUStock     = errors.New("SKU 库存不能小于 0")

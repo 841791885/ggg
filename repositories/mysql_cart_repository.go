@@ -52,6 +52,22 @@ func (r *MySQLRepository) GetCartItem(ctx context.Context, cartID, skuID uint64)
 	return item, nil
 }
 
+// GetCartItemByID 按明细 ID 查询当前用户自己的购物车商品。
+func (r *MySQLRepository) GetCartItemByID(ctx context.Context, userID, itemID uint64) (model.CartItem, error) {
+	var item model.CartItem
+	err := r.db.WithContext(ctx).
+		Joins("JOIN carts ON carts.id = cart_items.cart_id AND carts.deleted_at IS NULL").
+		Where("cart_items.id = ? AND carts.user_id = ?", itemID, userID).
+		First(&item).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return model.CartItem{}, model.ErrCartItemNotFound
+	}
+	if err != nil {
+		return model.CartItem{}, fmt.Errorf("查询购物车商品：%w", err)
+	}
+	return item, nil
+}
+
 // CreateCartItem 新增购物车明细。
 func (r *MySQLRepository) CreateCartItem(ctx context.Context, item model.CartItem) (model.CartItem, error) {
 	if err := r.db.WithContext(ctx).Create(&item).Error; err != nil {
@@ -70,4 +86,26 @@ func (r *MySQLRepository) UpdateCartItemQuantity(ctx context.Context, cartID, sk
 		return model.CartItem{}, model.ErrCartItemNotFound
 	}
 	return r.GetCartItem(ctx, cartID, skuID)
+}
+
+// DeleteCartItem 物理删除当前用户购物车中的指定明细。
+// 购物车是临时购买意向，物理删除后同一 SKU 才能再次加入；订单负责保留交易历史。
+// 用户条件放进同一条删除语句，避免客户端通过 item_id 删除其他用户的数据。
+func (r *MySQLRepository) DeleteCartItem(ctx context.Context, userID, itemID uint64) error {
+	userCartIDs := r.db.WithContext(ctx).
+		Model(&model.Cart{}).
+		Select("id").
+		Where("user_id = ?", userID)
+
+	result := r.db.WithContext(ctx).
+		Unscoped().
+		Where("id = ? AND cart_id IN (?)", itemID, userCartIDs).
+		Delete(&model.CartItem{})
+	if result.Error != nil {
+		return fmt.Errorf("删除购物车商品：%w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return model.ErrCartItemNotFound
+	}
+	return nil
 }

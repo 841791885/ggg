@@ -5,6 +5,7 @@ import (
 	"errors"
 	"go.uber.org/zap"
 	"net/http"
+	"strconv"
 
 	model "ggg/models"
 	"ggg/services"
@@ -15,6 +16,44 @@ import (
 type cartService interface {
 	AddItem(ctx context.Context, input services.AddCartItemInput) (model.CartItem, error)
 	GetCart(ctx context.Context, userID uint64) (model.Cart, error)
+	UpdateItemQuantity(ctx context.Context, input services.UpdateCartItemInput) (model.CartItem, error)
+	RemoveItem(ctx context.Context, userID, itemID uint64) error
+}
+
+// UpdateItemQuantity 处理修改当前用户购物车商品数量的请求。
+func (c *CartController) UpdateItemQuantity(ctx *gin.Context) {
+	userIDValue, exists := ctx.Get("user_id")
+	userID, ok := userIDValue.(uint64)
+	if !exists || !ok || userID == 0 {
+		respondError(ctx, http.StatusUnauthorized, "用户身份不存在")
+		return
+	}
+	itemID, err := strconv.ParseUint(ctx.Param("item_id"), 10, 64)
+	if err != nil || itemID == 0 {
+		respondError(ctx, http.StatusBadRequest, "item_id 必须是大于 0 的整数")
+		return
+	}
+	var request UpdateCartItemRequest
+	if err := ctx.ShouldBindJSON(&request); err != nil {
+		respondError(ctx, http.StatusBadRequest, "请求 JSON 格式不正确")
+		return
+	}
+	item, err := c.service.UpdateItemQuantity(ctx.Request.Context(), services.UpdateCartItemInput{UserID: userID, ItemID: itemID, Quantity: request.Quantity})
+	if err != nil {
+		switch {
+		case errors.Is(err, model.ErrInvalidCartQuantity):
+			respondError(ctx, http.StatusBadRequest, err.Error())
+		case errors.Is(err, model.ErrCartItemNotFound), errors.Is(err, model.ErrSKUNotFound):
+			respondError(ctx, http.StatusNotFound, err.Error())
+		case errors.Is(err, model.ErrSKUInactive), errors.Is(err, model.ErrInsufficientStock):
+			respondError(ctx, http.StatusConflict, err.Error())
+		default:
+			zap.L().Error("修改购物车商品数量失败", zap.Uint64("user_id", userID), zap.Uint64("item_id", itemID), zap.Error(err))
+			respondError(ctx, http.StatusInternalServerError, "服务器内部错误")
+		}
+		return
+	}
+	respondSuccess(ctx, http.StatusOK, newCartItemResponse(&item))
 }
 
 // GetCart 处理查询用户购物车请求。
@@ -75,4 +114,32 @@ func (c *CartController) AddItem(ctx *gin.Context) {
 		return
 	}
 	respondSuccess(ctx, http.StatusCreated, newCartItemResponse(&item))
+}
+
+// RemoveItem 处理删除当前用户购物车明细的请求。
+func (c *CartController) RemoveItem(ctx *gin.Context) {
+	userIDValue, exists := ctx.Get("user_id")
+	userID, ok := userIDValue.(uint64)
+	if !exists || !ok || userID == 0 {
+		respondError(ctx, http.StatusUnauthorized, "用户身份不存在")
+		return
+	}
+
+	itemID, err := strconv.ParseUint(ctx.Param("item_id"), 10, 64)
+	if err != nil || itemID == 0 {
+		respondError(ctx, http.StatusBadRequest, "item_id 必须是大于 0 的整数")
+		return
+	}
+
+	if err := c.service.RemoveItem(ctx.Request.Context(), userID, itemID); err != nil {
+		if errors.Is(err, model.ErrCartItemNotFound) {
+			respondError(ctx, http.StatusNotFound, err.Error())
+			return
+		}
+		zap.L().Error("删除购物车商品失败", zap.Uint64("user_id", userID), zap.Uint64("item_id", itemID), zap.Error(err))
+		respondError(ctx, http.StatusInternalServerError, "服务器内部错误")
+		return
+	}
+
+	ctx.Status(http.StatusNoContent)
 }

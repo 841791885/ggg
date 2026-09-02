@@ -7,26 +7,28 @@ import (
 )
 
 const (
-	PermissionProductCreate = "product.create"
-	PermissionProductRead   = "product.read"
-	PermissionProductUpdate = "product.update"
-	PermissionProductDelete = "product.delete"
-	PermissionSKUCreate     = "sku.create"
-	PermissionSKURead       = "sku.read"
-	PermissionSKUUpdate     = "sku.update"
-	PermissionSKUDelete     = "sku.delete"
-	PermissionCartRead      = "cart.read"
-	PermissionCartAddItem   = "cart.item.create"
+	PermissionProductCreate  = "product.create"
+	PermissionProductRead    = "product.read"
+	PermissionProductUpdate  = "product.update"
+	PermissionProductDelete  = "product.delete"
+	PermissionSKUCreate      = "sku.create"
+	PermissionSKURead        = "sku.read"
+	PermissionSKUUpdate      = "sku.update"
+	PermissionSKUDelete      = "sku.delete"
+	PermissionCartRead       = "cart.read"
+	PermissionCartAddItem    = "cart.item.create"
+	PermissionCartUpdateItem = "cart.item.update"
+	PermissionCartDeleteItem = "cart.item.delete"
 )
 
 var rolePermissions = map[string]map[string]struct{}{
 	"admin": {
 		PermissionProductCreate: {}, PermissionProductRead: {}, PermissionProductUpdate: {}, PermissionProductDelete: {},
 		PermissionSKUCreate: {}, PermissionSKURead: {}, PermissionSKUUpdate: {}, PermissionSKUDelete: {},
-		PermissionCartRead: {}, PermissionCartAddItem: {},
+		PermissionCartRead: {}, PermissionCartAddItem: {}, PermissionCartUpdateItem: {}, PermissionCartDeleteItem: {},
 	},
 	"customer": {
-		PermissionCartRead: {}, PermissionCartAddItem: {},
+		PermissionCartRead: {}, PermissionCartAddItem: {}, PermissionCartUpdateItem: {}, PermissionCartDeleteItem: {},
 	},
 }
 

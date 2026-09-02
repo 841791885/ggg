@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GoMall 管理台</title>
+  <link rel="stylesheet" href="/admin-ui/styles.css">
+  <link rel="stylesheet" href="/admin-ui/cart.css">
+</head>
+<body>
+  <section id="loginView" class="login-view">
+    <form id="loginForm" class="login-panel">
+      <div class="brand-mark">G</div>
+      <h1>GoMall 管理台</h1>
+      <p>使用管理员账号进入后台</p>
+      <label>用户名或邮箱<input id="loginName" value="admin" autocomplete="username" required></label>
+      <label>密码<input id="loginPassword" type="password" value="12345678" autocomplete="current-password" required></label>
+      <button class="button primary wide" type="submit">登录</button>
+      <div id="loginError" class="form-error"></div>
+    </form>
+  </section>
+
+  <div id="appView" class="app hidden">
+    <aside class="sidebar">
+      <div class="brand"><span class="brand-mark small">G</span><strong>GoMall</strong></div>
+      <nav>
+        <button class="nav-item active" data-view="dashboard"><span>⌂</span>概览</button>
+        <button class="nav-item" data-view="products"><span>□</span>商品管理</button>
+        <button class="nav-item" data-view="cart"><span>🛒</span>购物车</button>
+        <button class="nav-item" data-view="permissions"><span>◇</span>角色权限</button>
+      </nav>
+      <div class="sidebar-footer">
+        <div><strong id="currentUser">管理员</strong><small>admin</small></div>
+        <button id="logoutButton" class="icon-button" title="退出登录">↪</button>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div><h2 id="pageTitle">业务概览</h2><p id="pageSubtitle">商城核心数据与状态</p></div>
+        <div class="top-actions"><span class="environment">开发环境</span><button id="refreshButton" class="button secondary">↻ 刷新</button></div>
+      </header>
+
+      <section id="dashboardView" class="view">
+        <div class="metrics">
+          <article><span>商品总数</span><strong id="metricProducts">-</strong><small>Products</small></article>
+          <article><span>在售商品</span><strong id="metricOnSale">-</strong><small>On sale</small></article>
+          <article><span>草稿商品</span><strong id="metricDraft">-</strong><small>Draft</small></article>
+          <article><span>SKU 总数</span><strong id="metricSKU">-</strong><small>Stock units</small></article>
+        </div>
+        <div class="dashboard-grid">
+          <section class="panel">
+            <div class="panel-header"><div><h3>最近商品</h3><p>最新创建的商品记录</p></div><button class="text-button" data-go-products>查看全部 →</button></div>
+            <div id="recentProducts" class="compact-list loading">正在加载...</div>
+          </section>
+          <section class="panel">
+            <div class="panel-header"><div><h3>业务结构</h3><p>当前接口对应的业务关系</p></div></div>
+            <div class="business-flow">
+              <div><b>Product</b><span>商品基础信息</span></div><i>1</i><em>→</em><i>N</i><div><b>SKU</b><span>价格 · 规格 · 库存</span></div>
+              <div class="flow-line"></div>
+              <div><b>User</b><span>JWT 身份</span></div><i>1</i><em>→</em><i>1</i><div><b>Cart</b><span>用户购物车</span></div>
+            </div>
+          </section>
+        </div>
+      </section>
+
+      <section id="productsView" class="view hidden">
+        <div class="toolbar">
+          <div class="search"><span>⌕</span><input id="productSearch" placeholder="搜索商品名称"></div>
+          <button id="createProductButton" class="button primary">＋ 新建商品</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>商品</th><th>状态</th><th>更新时间</th><th>商品 ID</th><th class="align-right">操作</th></tr></thead>
+            <tbody id="productTableBody"></tbody>
+          </table>
+          <div id="productEmpty" class="empty hidden">暂无商品</div>
+          <div class="pagination"><span id="productCount">共 0 条</span><div><button id="prevPage" class="icon-button">←</button><span id="pageNumber">1</span><button id="nextPage" class="icon-button">→</button></div></div>
+        </div>
+      </section>
+
+      <section id="cartView" class="view hidden">
+        <div class="cart-metrics">
+          <div><span>购物车 ID</span><strong id="cartID">-</strong></div>
+          <div><span>用户 ID</span><strong id="cartUserID">-</strong></div>
+          <div><span>明细种类</span><strong id="cartItemCount">0</strong></div>
+          <div><span>商品总件数</span><strong id="cartQuantityTotal">0</strong></div>
+        </div>
+        <div class="cart-layout">
+          <section class="panel cart-items-panel">
+            <div class="panel-header"><div><h3>购物车明细</h3><p>每行对应一条 CartItem</p></div><button id="refreshCartButton" class="button secondary">↻ 刷新</button></div>
+            <div class="cart-table-wrap">
+              <table class="cart-table">
+                <thead><tr><th>SKU</th><th>单价 / 库存</th><th>数量</th><th>明细 ID</th><th class="align-right">操作</th></tr></thead>
+                <tbody id="cartTableBody"></tbody>
+              </table>
+              <div id="cartEmpty" class="empty hidden">购物车为空</div>
+            </div>
+          </section>
+          <aside class="panel cart-side">
+            <div class="panel-header"><div><h3>加入购物车</h3><p>选择一个已启用的 SKU</p></div></div>
+            <form id="addCartItemForm" class="cart-form">
+              <label>SKU<select id="cartSKUSelect" required><option value="">正在加载 SKU...</option></select></label>
+              <label>数量<input id="cartQuantity" type="number" min="1" value="1" required></label>
+              <div id="cartFormError" class="form-error"></div>
+              <button class="button primary wide" type="submit">加入购物车</button>
+            </form>
+            <div class="cart-relation">
+              <div><b>User</b><small>当前 JWT 用户</small></div><span>1 : 1</span><div><b>Cart</b><small>用户的购物车</small></div><span>1 : N</span><div><b>CartItem</b><small>SKU + 数量</small></div>
+            </div>
+          </aside>
+        </div>
+      </section>
+
+      <section id="permissionsView" class="view hidden">
+        <div class="permission-layout">
+          <section class="panel"><div class="panel-header"><div><h3>角色</h3><p>JWT 中携带的身份角色</p></div></div><div class="role-list"><button class="role active"><b>管理员</b><span>admin · 12 项权限</span></button><button class="role"><b>普通用户</b><span>customer · 4 项权限</span></button></div></section>
+          <section class="panel"><div class="panel-header"><div><h3>管理员权限</h3><p>路由中间件逐项校验</p></div></div><div class="permission-grid" id="permissionGrid"></div></section>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div id="modal" class="modal-backdrop hidden"><form id="productForm" class="modal"><div class="modal-header"><div><h3 id="modalTitle">新建商品</h3><p>商品创建后默认为草稿状态</p></div><button type="button" class="icon-button" data-close>×</button></div><label>商品名称<input id="productName" maxlength="100" required></label><label>商品描述<textarea id="productDescription" maxlength="2000" rows="5"></textarea></label><div id="formError" class="form-error"></div><div class="modal-actions"><button type="button" class="button secondary" data-close>取消</button><button type="submit" class="button primary">保存商品</button></div></form></div>
+
+  <aside id="skuDrawer" class="drawer hidden"><div class="drawer-header"><div><span class="eyebrow">PRODUCT SKU</span><h3 id="drawerProductName">商品规格</h3><p id="drawerProductMeta"></p></div><button class="icon-button" data-close-drawer>×</button></div><div class="drawer-toolbar"><h4>SKU 列表</h4><button id="createSKUButton" class="button secondary">＋ 添加 SKU</button></div><div id="skuList" class="sku-list"></div><form id="skuForm" class="sku-form hidden"><h4>添加 SKU</h4><div class="form-grid"><label>SKU 编码<input id="skuCode" placeholder="PHONE-BLACK-128" minlength="3" maxlength="32" pattern="[A-Z0-9][A-Z0-9_-]{2,31}" title="3 到 32 位，只能使用大写字母、数字、下划线和连字符" spellcheck="false" required></label><label>价格（分）<input id="skuPrice" type="number" min="1" required></label><label>库存<input id="skuStock" type="number" min="0" required></label><div class="sku-spec-editor"><div class="sku-spec-header"><span>规格（Specs）</span><button id="addSKUSpecButton" type="button" class="text-button">＋ 添加规格</button></div><div id="skuSpecRows"><div class="sku-spec-row"><input data-spec-key maxlength="20" placeholder="规格名，如：颜色" required><input data-spec-value maxlength="50" placeholder="规格值，如：黑色" required><button type="button" class="icon-button" data-remove-spec title="删除规格" disabled>×</button></div></div></div></div><div id="skuFormError" class="form-error"></div><div class="modal-actions"><button type="button" id="cancelSKU" class="button secondary">取消</button><button class="button primary" type="submit">创建 SKU</button></div></form></aside>
+  <div id="toast" class="toast hidden"></div>
+  <script src="/admin-ui/app.js"></script>
+</body>
+</html>

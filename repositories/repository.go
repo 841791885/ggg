@@ -31,8 +31,10 @@ type CartRepository interface {
 	GetOrCreateCart(context.Context, uint64) (model.Cart, error)
 	GetCart(context.Context, uint64) (model.Cart, error)
 	GetCartItem(context.Context, uint64, uint64) (model.CartItem, error)
+	GetCartItemByID(context.Context, uint64, uint64) (model.CartItem, error)
 	CreateCartItem(context.Context, model.CartItem) (model.CartItem, error)
 	UpdateCartItemQuantity(context.Context, uint64, uint64, int64) (model.CartItem, error)
+	DeleteCartItem(context.Context, uint64, uint64) error
 }
 
 // UserRepository 定义用户模块需要的数据持久化能力。

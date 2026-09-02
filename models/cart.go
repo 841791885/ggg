@@ -24,7 +24,7 @@ func (Cart) TableName() string { return "carts" }
 type CartItem struct {
 	ID        uint64         `json:"id" gorm:"primaryKey;autoIncrement"`
 	CartID    uint64         `json:"cart_id" gorm:"not null;index;uniqueIndex:uk_cart_items_cart_sku"`
-	SKUID     uint64         `json:"sku_id" gorm:"not null;index;uniqueIndex:uk_cart_items_cart_sku"`
+	SKUID     uint64         `json:"sku_id" gorm:"column:sku_id;not null;index;uniqueIndex:uk_cart_items_cart_sku"`
 	Quantity  int64          `json:"quantity" gorm:"not null;check:chk_cart_items_quantity_positive,quantity > 0"`
 	CreatedAt time.Time      `json:"created_at"`
 	UpdatedAt time.Time      `json:"updated_at"`

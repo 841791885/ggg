@@ -2,6 +2,7 @@ package routes
 
 import (
 	"fmt"
+	"net/http"
 
 	"ggg/controllers"
 	"ggg/middleware"
@@ -27,6 +28,11 @@ func New(
 
 	router.GET("/ping", healthController.Ping)
 	router.GET("/health/ready", healthController.Ready)
+	// 管理平台和 API 由同一个服务提供，因此前端可以直接请求当前域名下的接口。
+	router.Static("/admin-ui", "./admin-ui")
+	router.GET("/admin", func(c *gin.Context) {
+		c.Redirect(http.StatusTemporaryRedirect, "/admin-ui/")
+	})
 	router.POST("/api/v1/auth/register", userController.Register)
 	router.POST("/api/v1/auth/login", userController.Login)
 
@@ -34,6 +40,8 @@ func New(
 	authenticated.Use(middleware.JWTAuth(jwtSecret))
 	authenticated.POST("/cart/items", middleware.RequirePermission(middleware.PermissionCartAddItem), cartController.AddItem)
 	authenticated.GET("/cart", middleware.RequirePermission(middleware.PermissionCartRead), cartController.GetCart)
+	authenticated.PATCH("/cart/items/:item_id", middleware.RequirePermission(middleware.PermissionCartUpdateItem), cartController.UpdateItemQuantity)
+	authenticated.DELETE("/cart/items/:item_id", middleware.RequirePermission(middleware.PermissionCartDeleteItem), cartController.RemoveItem)
 
 	admin := authenticated.Group("/admin")
 	admin.POST("/products", middleware.RequirePermission(middleware.PermissionProductCreate), productController.CreateProduct)
