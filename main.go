@@ -52,6 +52,17 @@ func main() {
 	productController := controllers.NewProductController(productService)
 	cartService := services.NewCartService(productRepository)
 	cartController := controllers.NewCartController(cartService)
+	addressService := services.NewAddressService(productRepository)
+	addressController := controllers.NewAddressController(addressService)
+	// 交易链路服务统一注入完整 Repository，控制器按领域拆分 handler。
+	orderService := services.NewOrderService(productRepository)
+	paymentService := services.NewPaymentService(productRepository)
+	refundService := services.NewRefundService(productRepository)
+	couponService := services.NewCouponService(productRepository)
+	reviewService := services.NewReviewService(productRepository)
+	notificationService := services.NewNotificationService(productRepository)
+	taskService := services.NewTaskService(productRepository)
+	tradeController := controllers.NewTradeController(orderService, paymentService, refundService, couponService, reviewService, notificationService, taskService)
 	userService := services.NewUserService(productRepository)
 	authService := services.NewAuthService(productRepository, appConfig.Auth.JWTSecret, appConfig.Auth.TokenTTL.Value())
 	userController := controllers.NewUserController(struct {
@@ -59,7 +70,7 @@ func main() {
 		*services.AuthService
 	}{userService, authService})
 
-	router, err := routes.New(healthController, productController, cartController, userController, appConfig.Auth.JWTSecret)
+	router, err := routes.New(healthController, productController, cartController, addressController, tradeController, userController, appConfig.Auth.JWTSecret)
 	if err != nil {
 		zap.L().Fatal("创建路由失败", zap.Error(err))
 	}

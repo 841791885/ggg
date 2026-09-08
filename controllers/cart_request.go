@@ -10,3 +10,8 @@ type AddCartItemRequest struct {
 type UpdateCartItemRequest struct {
 	Quantity int64 `json:"quantity"`
 }
+
+// UpdateCartSelectionRequest 表示整组替换购物车选中状态的请求体；item_ids 为期望选中的明细集合。
+type UpdateCartSelectionRequest struct {
+	ItemIDs []uint64 `json:"item_ids"`
+}

@@ -18,6 +18,33 @@ type cartService interface {
 	GetCart(ctx context.Context, userID uint64) (model.Cart, error)
 	UpdateItemQuantity(ctx context.Context, input services.UpdateCartItemInput) (model.CartItem, error)
 	RemoveItem(ctx context.Context, userID, itemID uint64) error
+	SetSelection(ctx context.Context, userID uint64, itemIDs []uint64) ([]model.CartItem, error)
+}
+
+// SetSelection 处理整组替换购物车选中状态的请求（PUT /cart/selection）。
+func (c *CartController) SetSelection(ctx *gin.Context) {
+	userIDValue, exists := ctx.Get("user_id")
+	userID, ok := userIDValue.(uint64)
+	if !exists || !ok || userID == 0 {
+		respondError(ctx, http.StatusUnauthorized, "用户身份不存在")
+		return
+	}
+	var request UpdateCartSelectionRequest
+	if err := ctx.ShouldBindJSON(&request); err != nil {
+		respondError(ctx, http.StatusBadRequest, "请求 JSON 格式不正确")
+		return
+	}
+	items, err := c.service.SetSelection(ctx.Request.Context(), userID, request.ItemIDs)
+	if err != nil {
+		zap.L().Error("更新购物车选中状态失败", zap.Uint64("user_id", userID), zap.Error(err))
+		respondError(ctx, http.StatusInternalServerError, "服务器内部错误")
+		return
+	}
+	responses := make([]CartItemResponse, len(items))
+	for i := range items {
+		responses[i] = newCartItemResponse(&items[i])
+	}
+	respondSuccess(ctx, http.StatusOK, gin.H{"items": responses})
 }
 
 // UpdateItemQuantity 处理修改当前用户购物车商品数量的请求。

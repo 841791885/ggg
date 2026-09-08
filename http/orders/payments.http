@@ -1,0 +1,20 @@
+### 支付接口使用的登录凭证
+# @name payLogin
+POST {{baseUrl}}/api/v1/auth/login
+Content-Type: application/json
+
+{"login":"admin","password":"12345678"}
+
+###
+
+### 为待支付订单创建模拟支付单（金额由订单生成；重复调用复用同一张）
+POST {{baseUrl}}/api/v1/orders/2/payments
+Authorization: Bearer {{payLogin.response.body.$.data.access_token}}
+
+###
+
+### 按支付单号查询支付状态（payment_no 替换为上一步返回值）
+GET {{baseUrl}}/api/v1/payments/REPLACE_WITH_PAYMENT_NO
+Authorization: Bearer {{payLogin.response.body.$.data.access_token}}
+
+###

@@ -1,0 +1,57 @@
+### 收货地址接口使用的登录凭证
+# @name addressLogin
+POST {{baseUrl}}/api/v1/auth/login
+Content-Type: application/json
+
+{"login":"admin","password":"12345678"}
+
+###
+
+### 新增收货地址（用户的第一个地址会自动成为默认地址）
+POST {{baseUrl}}/api/v1/addresses
+Authorization: Bearer {{addressLogin.response.body.$.data.access_token}}
+Content-Type: application/json
+
+{
+  "recipient": "张三",
+  "phone": "13800138000",
+  "province": "江苏省",
+  "city": "南京市",
+  "district": "玄武区",
+  "detail": "中山路 100 号 1 栋 101 室"
+}
+
+###
+
+### 第二个地址不会自动变默认（is_default 提交也会被忽略）
+POST {{baseUrl}}/api/v1/addresses
+Authorization: Bearer {{addressLogin.response.body.$.data.access_token}}
+Content-Type: application/json
+
+{
+  "recipient": "李四",
+  "phone": "13900139000",
+  "province": "江苏省",
+  "city": "苏州市",
+  "district": "姑苏区",
+  "detail": "平江路 200 号 2 栋 202 室",
+  "is_default": true
+}
+
+###
+
+### 非法手机号应返回 400
+POST {{baseUrl}}/api/v1/addresses
+Authorization: Bearer {{addressLogin.response.body.$.data.access_token}}
+Content-Type: application/json
+
+{
+  "recipient": "王五",
+  "phone": "12345",
+  "province": "江苏省",
+  "city": "无锡市",
+  "district": "梁溪区",
+  "detail": "解放西路 300 号 3 栋 303 室"
+}
+
+###

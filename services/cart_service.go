@@ -120,6 +120,19 @@ func (s *CartService) UpdateItemQuantity(ctx context.Context, input UpdateCartIt
 	return updated, nil
 }
 
+// SetSelection 整组替换购物车选中状态（PRD-004 PUT /cart/selection）。
+// item_ids 为期望选中的明细集合，未列出的自动取消选中；空数组表示全部取消。
+func (s *CartService) SetSelection(ctx context.Context, userID uint64, itemIDs []uint64) ([]model.CartItem, error) {
+	if userID == 0 {
+		return nil, model.ErrInvalidUserID
+	}
+	items, err := s.repository.SetCartSelections(ctx, userID, itemIDs)
+	if err != nil {
+		return nil, fmt.Errorf("更新购物车选中状态：%w", err)
+	}
+	return items, nil
+}
+
 // RemoveItem 删除当前用户购物车中的指定明细。
 func (s *CartService) RemoveItem(ctx context.Context, userID, itemID uint64) error {
 	if userID == 0 {

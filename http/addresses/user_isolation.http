@@ -1,0 +1,59 @@
+### 用户 A（admin）登录
+# @name userA
+POST {{baseUrl}}/api/v1/auth/login
+Content-Type: application/json
+
+{"login":"admin","password":"12345678"}
+
+###
+
+### 用户 B 注册（已存在时直接改用 login 获取凭证）
+# @name userBRegister
+POST {{baseUrl}}/api/v1/auth/register
+Content-Type: application/json
+
+{
+  "username": "buyer_test_01",
+  "email": "buyer_test_01@example.com",
+  "password": "12345678"
+}
+
+###
+
+### 用户 B 登录
+# @name userB
+POST {{baseUrl}}/api/v1/auth/login
+Content-Type: application/json
+
+{"login":"buyer_test_01","password":"12345678"}
+
+###
+
+### 用户 B 查看自己的地址列表应为空（看不到用户 A 的地址）
+GET {{baseUrl}}/api/v1/addresses
+Authorization: Bearer {{userB.response.body.$.data.access_token}}
+
+###
+
+### 用户 B 修改用户 A 的 1 号地址应返回 404（越权按不存在处理）
+PATCH {{baseUrl}}/api/v1/addresses/1
+Authorization: Bearer {{userB.response.body.$.data.access_token}}
+Content-Type: application/json
+
+{
+  "recipient": "冒领者"
+}
+
+###
+
+### 用户 B 将用户 A 的 1 号地址设为默认应返回 404
+PUT {{baseUrl}}/api/v1/addresses/1/default
+Authorization: Bearer {{userB.response.body.$.data.access_token}}
+
+###
+
+### 用户 B 删除用户 A 的 1 号地址应返回 404
+DELETE {{baseUrl}}/api/v1/addresses/1
+Authorization: Bearer {{userB.response.body.$.data.access_token}}
+
+###

@@ -1,0 +1,136 @@
+/* 收货地址视图：复用 cart.css 的布局骨架，只补充地址特有的差异样式。 */
+
+.address-form label {
+  display: block;
+  margin-bottom: 12px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.address-form input,
+.address-form textarea {
+  box-sizing: border-box;
+  width: 100%;
+  margin-top: 4px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font: inherit;
+  color: inherit;
+}
+
+.address-region {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.address-detail {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rule-hint {
+  font-size: 14px !important;
+  line-height: 24px;
+}
+
+/* 购物车结算区：勾选列、合计与去结算按钮。 */
+.cart-check input {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+
+.cart-summary {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--border);
+}
+
+.cart-summary-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+  font-size: 13px;
+}
+
+.cart-summary-row strong:last-child {
+  font-size: 18px;
+  color: #d23b3b;
+}
+
+.cart-summary-hint {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+/* 订单操作按钮文字链样式。 */
+.row-actions .link-button {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--primary, #2f6fed);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.row-actions .link-button.danger {
+  color: #d23b3b;
+}
+
+.row-actions .link-button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* 消息通知列表：未读加蓝点，已读灰化。 */
+.notification-list {
+  padding: 8px 0;
+}
+
+.notification-item {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 12px 16px;
+  cursor: pointer;
+}
+
+.notification-item:hover {
+  background: #f7f9fc;
+}
+
+.notification-item .dot {
+  width: 8px;
+  height: 8px;
+  margin-top: 6px;
+  border-radius: 50%;
+  background: var(--primary, #2f6fed);
+  flex-shrink: 0;
+}
+
+.notification-item.read .dot {
+  background: transparent;
+  border: 1px solid var(--border);
+}
+
+.notification-item p {
+  margin: 4px 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.notification-item small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.notification-item.read b,
+.notification-item.read p {
+  opacity: 0.55;
+}

@@ -10,7 +10,6 @@ import (
 
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
-	"gorm.io/gorm/logger"
 )
 
 // OpenMySQL 创建 GORM 和底层 database/sql 连接池，并确认数据库可以访问。
@@ -19,7 +18,7 @@ func OpenMySQL(ctx context.Context, databaseConfig config.DatabaseConfig) (*gorm
 		// 将唯一键冲突等数据库错误转换为 GORM 的通用错误，便于 Repository 判断。
 		TranslateError: true,
 		// 开发阶段使用 Info，输出每次 GORM 操作生成的 SQL、耗时和影响行数。
-		Logger: logger.Default.LogMode(logger.Info),
+		// Logger: logger.Default.LogMode(logger.Info),
 		// GORM 自动填写 CreatedAt、UpdatedAt 时统一使用 UTC。
 		NowFunc: func() time.Time {
 			return time.Now().UTC()

@@ -1,0 +1,44 @@
+### 退款接口使用的登录凭证
+# @name refundLogin
+POST {{baseUrl}}/api/v1/auth/login
+Content-Type: application/json
+
+{"login":"admin","password":"12345678"}
+
+###
+
+### 消费者对订单项申请退款（金额不得超过该实付小计；已有待处理退款返回 409）
+POST {{baseUrl}}/api/v1/order-items/2/refunds
+Authorization: Bearer {{refundLogin.response.body.$.data.access_token}}
+Content-Type: application/json
+
+{
+  "amount_cent": 5359,
+  "reason": "拍错了，不想要了"
+}
+
+###
+
+### 我的退款列表
+GET {{baseUrl}}/api/v1/refunds
+Authorization: Bearer {{refundLogin.response.body.$.data.access_token}}
+
+###
+
+### 运营查看全部退款单（支持 status=pending|approved|rejected|refunded 过滤）
+GET {{baseUrl}}/api/v1/admin/refunds?page=1&page_size=10&status=pending
+Authorization: Bearer {{refundLogin.response.body.$.data.access_token}}
+
+###
+
+### 运营审核通过并模拟退款成功（重复审核返回 404/409）
+POST {{baseUrl}}/api/v1/admin/refunds/1/approve
+Authorization: Bearer {{refundLogin.response.body.$.data.access_token}}
+
+###
+
+### 运营驳回退款申请
+POST {{baseUrl}}/api/v1/admin/refunds/2/reject
+Authorization: Bearer {{refundLogin.response.body.$.data.access_token}}
+
+###

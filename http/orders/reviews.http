@@ -1,0 +1,42 @@
+### 评价接口使用的登录凭证
+# @name reviewLogin
+POST {{baseUrl}}/api/v1/auth/login
+Content-Type: application/json
+
+{"login":"admin","password":"12345678"}
+
+###
+
+### 对已完成订单项提交评价（rating 1-5；重复评价返回 409；退款中返回 409）
+POST {{baseUrl}}/api/v1/order-items/2/reviews
+Authorization: Bearer {{reviewLogin.response.body.$.data.access_token}}
+Content-Type: application/json
+
+{
+  "rating": 5,
+  "content": "很好用，物流也快"
+}
+
+###
+
+### 公开查看商品评价（无需登录）
+GET {{baseUrl}}/api/v1/products/4/reviews?page=1&page_size=10
+
+###
+
+### 运营查看全部评价（含隐藏，可按 product_id 过滤）
+GET {{baseUrl}}/api/v1/admin/reviews?page=1&page_size=10
+Authorization: Bearer {{reviewLogin.response.body.$.data.access_token}}
+
+###
+
+### 运营隐藏/恢复评价显示（隐藏记录操作者用于审计）
+PUT {{baseUrl}}/api/v1/admin/reviews/1/visibility
+Authorization: Bearer {{reviewLogin.response.body.$.data.access_token}}
+Content-Type: application/json
+
+{
+  "visible": false
+}
+
+###

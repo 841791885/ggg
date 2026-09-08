@@ -1,0 +1,53 @@
+### 优惠券接口使用的登录凭证
+# @name couponLogin
+POST {{baseUrl}}/api/v1/auth/login
+Content-Type: application/json
+
+{"login":"admin","password":"12345678"}
+
+###
+
+### 运营创建满减券模板（金额单位：分）
+POST {{baseUrl}}/api/v1/admin/coupon-templates
+Authorization: Bearer {{couponLogin.response.body.$.data.access_token}}
+Content-Type: application/json
+
+{
+  "name": "满50减10",
+  "threshold_cent": 5000,
+  "discount_cent": 1000,
+  "total_count": 100,
+  "starts_at": "2026-09-01T00:00:00Z",
+  "ends_at": "2026-12-31T00:00:00Z"
+}
+
+###
+
+### 运营查看券模板列表
+GET {{baseUrl}}/api/v1/admin/coupon-templates?page=1&page_size=10
+Authorization: Bearer {{couponLogin.response.body.$.data.access_token}}
+
+###
+
+### 运营下架券模板
+PATCH {{baseUrl}}/api/v1/admin/coupon-templates/1
+Authorization: Bearer {{couponLogin.response.body.$.data.access_token}}
+Content-Type: application/json
+
+{
+  "status": "inactive"
+}
+
+###
+
+### 用户领取优惠券（重复领取返回 409；已下架返回 409）
+POST {{baseUrl}}/api/v1/coupons/1/claim
+Authorization: Bearer {{couponLogin.response.body.$.data.access_token}}
+
+###
+
+### 我的券列表
+GET {{baseUrl}}/api/v1/coupons
+Authorization: Bearer {{couponLogin.response.body.$.data.access_token}}
+
+###

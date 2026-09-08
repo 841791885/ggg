@@ -1,0 +1,39 @@
+### 通知接口使用的登录凭证
+# @name notifLogin
+POST {{baseUrl}}/api/v1/auth/login
+Content-Type: application/json
+
+{"login":"admin","password":"12345678"}
+
+###
+
+### 生成站内通知（本阶段供联调造数；事件自动触发待 PRD-008 worker）
+POST {{baseUrl}}/api/v1/notifications
+Authorization: Bearer {{notifLogin.response.body.$.data.access_token}}
+Content-Type: application/json
+
+{
+  "type": "order_shipped",
+  "title": "订单已发货",
+  "content": "您的订单已进入运输途中"
+}
+
+###
+
+### 我的通知列表（未读在前）
+GET {{baseUrl}}/api/v1/notifications?page=1&page_size=10
+Authorization: Bearer {{notifLogin.response.body.$.data.access_token}}
+
+###
+
+### 标记单条已读（成功返回 204）
+PUT {{baseUrl}}/api/v1/notifications/1/read
+Authorization: Bearer {{notifLogin.response.body.$.data.access_token}}
+
+###
+
+### 一键全部已读
+PUT {{baseUrl}}/api/v1/notifications/read-all
+Authorization: Bearer {{notifLogin.response.body.$.data.access_token}}
+
+###

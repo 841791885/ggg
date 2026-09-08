@@ -1,0 +1,20 @@
+### 收货地址接口使用的登录凭证
+# @name addressLogin
+POST {{baseUrl}}/api/v1/auth/login
+Content-Type: application/json
+
+{"login":"admin","password":"12345678"}
+
+###
+
+### 删除地址（成功返回 204；若删除的是默认地址，不会自动补选新默认）
+DELETE {{baseUrl}}/api/v1/addresses/2
+Authorization: Bearer {{addressLogin.response.body.$.data.access_token}}
+
+###
+
+### 重复删除应返回 404
+DELETE {{baseUrl}}/api/v1/addresses/2
+Authorization: Bearer {{addressLogin.response.body.$.data.access_token}}
+
+###

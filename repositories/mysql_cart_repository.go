@@ -88,6 +88,46 @@ func (r *MySQLRepository) UpdateCartItemQuantity(ctx context.Context, cartID, sk
 	return r.GetCartItem(ctx, cartID, skuID)
 }
 
+// SetCartSelections 整组替换购物车选中状态：传入的 item_id 置为选中，其余全部取消。
+// 目的：选择/取消是"最终集合"语义而非增量开关，两次 UPDATE 覆盖所有行，天然幂等。
+func (r *MySQLRepository) SetCartSelections(ctx context.Context, userID uint64, selectedIDs []uint64) ([]model.CartItem, error) {
+	cart, err := r.GetOrCreateCart(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("获取购物车：%w", err)
+	}
+	selected := map[uint64]struct{}{}
+	for _, id := range selectedIDs {
+		selected[id] = struct{}{}
+	}
+	items, err := r.GetCartItemsByCart(ctx, cart.ID)
+	if err != nil {
+		return nil, err
+	}
+	for i := range items {
+		wantSelected := false
+		if _, ok := selected[items[i].ID]; ok {
+			wantSelected = true
+		}
+		if items[i].Selected == wantSelected {
+			continue // 状态未变化的行跳过更新，减少写放大
+		}
+		if err := r.db.WithContext(ctx).Model(&model.CartItem{}).Where("id = ?", items[i].ID).Update("selected", wantSelected).Error; err != nil {
+			return nil, fmt.Errorf("更新购物车选中状态：%w", err)
+		}
+		items[i].Selected = wantSelected
+	}
+	return items, nil
+}
+
+// GetCartItemsByCart 查询购物车全部明细。
+func (r *MySQLRepository) GetCartItemsByCart(ctx context.Context, cartID uint64) ([]model.CartItem, error) {
+	var items []model.CartItem
+	if err := r.db.WithContext(ctx).Where("cart_id = ?", cartID).Order("id ASC").Find(&items).Error; err != nil {
+		return nil, fmt.Errorf("查询购物车商品列表：%w", err)
+	}
+	return items, nil
+}
+
 // DeleteCartItem 物理删除当前用户购物车中的指定明细。
 // 购物车是临时购买意向，物理删除后同一 SKU 才能再次加入；订单负责保留交易历史。
 // 用户条件放进同一条删除语句，避免客户端通过 item_id 删除其他用户的数据。

@@ -1,0 +1,50 @@
+### 订单接口使用的登录凭证
+# @name orderLogin
+POST {{baseUrl}}/api/v1/auth/login
+Content-Type: application/json
+
+{"login":"admin","password":"12345678"}
+
+###
+
+### 下单预览（服务端重算选中项价格与可购买性）
+POST {{baseUrl}}/api/v1/cart/preview
+Authorization: Bearer {{orderLogin.response.body.$.data.access_token}}
+
+###
+
+### 创建订单（Idempotency-Key 必传；重复执行同 key 返回同一订单）
+POST {{baseUrl}}/api/v1/orders
+Authorization: Bearer {{orderLogin.response.body.$.data.access_token}}
+Idempotency-Key: vscode-demo-key-0001
+Content-Type: application/json
+
+{
+  "address_id": 36
+}
+
+###
+
+### 我的订单列表（支持 status=pending_payment|paid|shipped|completed|cancelled 过滤）
+GET {{baseUrl}}/api/v1/orders?page=1&page_size=10
+Authorization: Bearer {{orderLogin.response.body.$.data.access_token}}
+
+###
+
+### 订单详情（含订单项快照与状态历史）
+GET {{baseUrl}}/api/v1/orders/2
+Authorization: Bearer {{orderLogin.response.body.$.data.access_token}}
+
+###
+
+### 取消待支付订单
+POST {{baseUrl}}/api/v1/orders/999/cancel
+Authorization: Bearer {{orderLogin.response.body.$.data.access_token}}
+
+###
+
+### 确认收货（仅已发货订单）
+POST {{baseUrl}}/api/v1/orders/2/confirm-receipt
+Authorization: Bearer {{orderLogin.response.body.$.data.access_token}}
+
+###

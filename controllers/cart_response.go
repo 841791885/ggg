@@ -8,9 +8,10 @@ type CartItemResponse struct {
 	CartID   uint64 `json:"cart_id"`
 	SKUID    uint64 `json:"sku_id"`
 	Quantity int64  `json:"quantity"`
+	Selected bool   `json:"selected"`
 }
 
 // newCartItemResponse 将购物车明细模型转换为对外响应结构。
 func newCartItemResponse(item *model.CartItem) CartItemResponse {
-	return CartItemResponse{ID: item.ID, CartID: item.CartID, SKUID: item.SKUID, Quantity: item.Quantity}
+	return CartItemResponse{ID: item.ID, CartID: item.CartID, SKUID: item.SKUID, Quantity: item.Quantity, Selected: item.Selected}
 }

@@ -1,0 +1,20 @@
+### 任务接口使用的登录凭证（运营角色）
+# @name taskLogin
+POST {{baseUrl}}/api/v1/auth/login
+Content-Type: application/json
+
+{"login":"admin","password":"12345678"}
+
+###
+
+### 查看后台任务列表（支持 status=pending|running|succeeded|failed 与 task_type 过滤）
+GET {{baseUrl}}/api/v1/admin/tasks?page=1&page_size=10
+Authorization: Bearer {{taskLogin.response.body.$.data.access_token}}
+
+###
+
+### 重试失败任务（清零执行次数并记录操作者；非 failed 状态返回 409）
+POST {{baseUrl}}/api/v1/admin/tasks/1/retry
+Authorization: Bearer {{taskLogin.response.body.$.data.access_token}}
+
+###

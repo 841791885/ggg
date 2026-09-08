@@ -19,6 +19,28 @@ const (
 	PermissionCartAddItem    = "cart.item.create"
 	PermissionCartUpdateItem = "cart.item.update"
 	PermissionCartDeleteItem = "cart.item.delete"
+	PermissionAddressCreate  = "address.create"
+	PermissionAddressRead    = "address.read"
+	PermissionAddressUpdate  = "address.update"
+	PermissionAddressDelete  = "address.delete"
+	// 交易链路权限：消费者私有数据（订单/支付/退款/券/评价/通知）与运营操作分离。
+	PermissionOrderCreate      = "order.create"
+	PermissionOrderRead        = "order.read"
+	PermissionOrderCancel      = "order.cancel"
+	PermissionOrderShip        = "order.ship"
+	PermissionPaymentCreate    = "payment.create"
+	PermissionPaymentRead      = "payment.read"
+	PermissionRefundApply      = "refund.apply"
+	PermissionRefundRead       = "refund.read"
+	PermissionRefundReview     = "refund.review"
+	PermissionCouponClaim      = "coupon.claim"
+	PermissionCouponManage     = "coupon.manage"
+	PermissionReviewCreate     = "review.create"
+	PermissionReviewRead       = "review.read"
+	PermissionReviewVisibility = "review.visibility"
+	PermissionNotificationRead = "notification.read"
+	PermissionTaskRead         = "task.read"
+	PermissionTaskRetry        = "task.retry"
 )
 
 var rolePermissions = map[string]map[string]struct{}{
@@ -26,9 +48,24 @@ var rolePermissions = map[string]map[string]struct{}{
 		PermissionProductCreate: {}, PermissionProductRead: {}, PermissionProductUpdate: {}, PermissionProductDelete: {},
 		PermissionSKUCreate: {}, PermissionSKURead: {}, PermissionSKUUpdate: {}, PermissionSKUDelete: {},
 		PermissionCartRead: {}, PermissionCartAddItem: {}, PermissionCartUpdateItem: {}, PermissionCartDeleteItem: {},
+		PermissionAddressCreate: {}, PermissionAddressRead: {}, PermissionAddressUpdate: {}, PermissionAddressDelete: {},
+		// admin 同时持有消费者侧权限：登录用户就是自己的私有数据（订单/支付/券等）的主人，
+		// 所有权仍由 repository 层 user_id 过滤保证，admin 也无法越权访问他人数据。
+		PermissionOrderCreate: {}, PermissionOrderCancel: {}, PermissionPaymentCreate: {}, PermissionPaymentRead: {},
+		PermissionRefundApply: {}, PermissionCouponClaim: {}, PermissionReviewCreate: {}, PermissionNotificationRead: {},
+		// 运营侧：发货、退款审核、券管理、评价显隐、任务运维。
+		PermissionOrderRead: {}, PermissionOrderShip: {}, PermissionRefundRead: {}, PermissionRefundReview: {},
+		PermissionCouponManage: {}, PermissionReviewVisibility: {}, PermissionTaskRead: {}, PermissionTaskRetry: {},
 	},
 	"customer": {
 		PermissionCartRead: {}, PermissionCartAddItem: {}, PermissionCartUpdateItem: {}, PermissionCartDeleteItem: {},
+		PermissionAddressCreate: {}, PermissionAddressRead: {}, PermissionAddressUpdate: {}, PermissionAddressDelete: {},
+		// 消费者侧：全部围绕自己的私有交易数据，所有权由 repository 层过滤。
+		PermissionOrderCreate: {}, PermissionOrderRead: {}, PermissionOrderCancel: {},
+		PermissionPaymentCreate: {}, PermissionPaymentRead: {},
+		PermissionRefundApply: {}, PermissionRefundRead: {},
+		PermissionCouponClaim: {}, PermissionReviewCreate: {}, PermissionReviewRead: {},
+		PermissionNotificationRead: {},
 	},
 }
 

@@ -22,10 +22,12 @@ func (Cart) TableName() string { return "carts" }
 
 // CartItem 表示购物车中的一个 SKU 及其购买数量。
 type CartItem struct {
-	ID        uint64         `json:"id" gorm:"primaryKey;autoIncrement"`
-	CartID    uint64         `json:"cart_id" gorm:"not null;index;uniqueIndex:uk_cart_items_cart_sku"`
-	SKUID     uint64         `json:"sku_id" gorm:"column:sku_id;not null;index;uniqueIndex:uk_cart_items_cart_sku"`
-	Quantity  int64          `json:"quantity" gorm:"not null;check:chk_cart_items_quantity_positive,quantity > 0"`
+	ID       uint64 `json:"id" gorm:"primaryKey;autoIncrement"`
+	CartID   uint64 `json:"cart_id" gorm:"not null;index;uniqueIndex:uk_cart_items_cart_sku"`
+	SKUID    uint64 `json:"sku_id" gorm:"column:sku_id;not null;index;uniqueIndex:uk_cart_items_cart_sku"`
+	Quantity int64  `json:"quantity" gorm:"not null;check:chk_cart_items_quantity_positive,quantity > 0"`
+	// Selected 表示该明细是否纳入下单预览；新加入的商品默认选中。
+	Selected  bool           `json:"selected" gorm:"not null;default:true"`
 	CreatedAt time.Time      `json:"created_at"`
 	UpdatedAt time.Time      `json:"updated_at"`
 	DeletedAt gorm.DeletedAt `json:"-" gorm:"index"`

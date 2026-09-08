@@ -1,0 +1,40 @@
+### 收货地址接口使用的登录凭证
+# @name addressLogin
+POST {{baseUrl}}/api/v1/auth/login
+Content-Type: application/json
+
+{"login":"admin","password":"12345678"}
+
+###
+
+### 局部修改地址（只改收件人和详细地址，先执行上面的 addressLogin）
+PATCH {{baseUrl}}/api/v1/addresses/1
+Authorization: Bearer {{addressLogin.response.body.$.data.access_token}}
+Content-Type: application/json
+
+{
+  "recipient": "张三丰",
+  "detail": "中山路 100 号 1 栋 101 室（前台代收）"
+}
+
+###
+
+### 空请求体应返回 400（至少提供一个需要修改的地址字段）
+PATCH {{baseUrl}}/api/v1/addresses/1
+Authorization: Bearer {{addressLogin.response.body.$.data.access_token}}
+Content-Type: application/json
+
+{}
+
+###
+
+### 省市区只提交一半应返回 400
+PATCH {{baseUrl}}/api/v1/addresses/1
+Authorization: Bearer {{addressLogin.response.body.$.data.access_token}}
+Content-Type: application/json
+
+{
+  "province": "浙江省"
+}
+
+###

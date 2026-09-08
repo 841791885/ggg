@@ -1,0 +1,20 @@
+### 收货地址接口使用的登录凭证
+# @name addressLogin
+POST {{baseUrl}}/api/v1/auth/login
+Content-Type: application/json
+
+{"login":"admin","password":"12345678"}
+
+###
+
+### 把 2 号地址设为默认（事务内先清除旧默认，再执行后 GET 列表应仍只有一个 is_default=true）
+PUT {{baseUrl}}/api/v1/addresses/2/default
+Authorization: Bearer {{addressLogin.response.body.$.data.access_token}}
+
+###
+
+### 设置不存在的地址为默认应返回 404
+PUT {{baseUrl}}/api/v1/addresses/999999/default
+Authorization: Bearer {{addressLogin.response.body.$.data.access_token}}
+
+###

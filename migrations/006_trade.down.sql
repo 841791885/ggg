@@ -1,0 +1,12 @@
+DROP TABLE IF EXISTS background_tasks;
+DROP TABLE IF EXISTS notifications;
+DROP TABLE IF EXISTS reviews;
+DROP TABLE IF EXISTS user_coupons;
+DROP TABLE IF EXISTS coupon_templates;
+DROP TABLE IF EXISTS refunds;
+DROP TABLE IF EXISTS payment_callback_logs;
+DROP TABLE IF EXISTS payments;
+DROP TABLE IF EXISTS order_status_logs;
+DROP TABLE IF EXISTS order_items;
+DROP TABLE IF EXISTS orders;
+ALTER TABLE cart_items DROP COLUMN selected;
