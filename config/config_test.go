@@ -32,6 +32,8 @@ database:
 auth:
   jwt_secret: "test-secret"
   token_ttl: 2h
+payment:
+  callback_secret: "test-callback-secret"
 log:
   environment: "development"
   level: "debug"

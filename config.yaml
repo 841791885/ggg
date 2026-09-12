@@ -21,6 +21,10 @@ auth:
   jwt_secret: "learning-gomall-secret-change-me"
   token_ttl: 2h
 
+payment:
+  # 模拟渠道回调的 HMAC 验签密钥（学习用；生产经环境变量注入，不入库）
+  callback_secret: "mock-channel-secret-dev-only"
+
 log:
   environment: "development"
   level: "debug"

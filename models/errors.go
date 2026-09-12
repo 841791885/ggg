@@ -67,6 +67,12 @@ var (
 	ErrPaymentNotFound = errors.New("支付单不存在")
 	// ErrPaymentAlreadyExists 表示订单已有进行中的支付单。
 	ErrPaymentAlreadyExists = errors.New("订单已存在待支付支付单")
+	// ErrInvalidCallbackSignature 表示回调 HMAC 签名校验失败（伪造或密钥不一致）。
+	ErrInvalidCallbackSignature = errors.New("回调签名校验失败")
+	// ErrCallbackAmountMismatch 表示回调金额与支付单不一致，拒绝推进。
+	ErrCallbackAmountMismatch = errors.New("回调金额与支付单不一致")
+	// ErrCallbackOrderStateConflict 表示支付结果与订单当前状态冲突（如已取消订单收到成功回调），需人工处理。
+	ErrCallbackOrderStateConflict = errors.New("支付结果与订单状态冲突，请联系客服处理")
 	// ErrRefundNotFound 表示退款单不存在。
 	ErrRefundNotFound = errors.New("退款单不存在")
 	// ErrRefundAlreadyPending 表示该订单项已有待处理退款。

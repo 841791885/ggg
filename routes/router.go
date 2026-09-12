@@ -48,6 +48,8 @@ func New(
 	})
 	router.POST("/api/v1/auth/register", userController.Register)
 	router.POST("/api/v1/auth/login", userController.Login)
+	// 模拟渠道回调：公开端点（渠道无登录态），安全由 HMAC 验签保证。
+	router.POST("/api/v1/payment-callbacks/mock", tradeController.MockPaymentCallback)
 
 	authenticated := router.Group("/api/v1")
 	authenticated.Use(middleware.JWTAuth(jwtSecret))

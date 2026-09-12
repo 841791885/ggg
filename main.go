@@ -56,7 +56,7 @@ func main() {
 	addressController := controllers.NewAddressController(addressService)
 	// 交易链路服务统一注入完整 Repository，控制器按领域拆分 handler。
 	orderService := services.NewOrderService(productRepository)
-	paymentService := services.NewPaymentService(productRepository)
+	paymentService := services.NewPaymentService(productRepository, appConfig.Payment.CallbackSecret)
 	refundService := services.NewRefundService(productRepository)
 	couponService := services.NewCouponService(productRepository)
 	reviewService := services.NewReviewService(productRepository)

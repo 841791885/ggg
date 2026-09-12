@@ -76,11 +76,14 @@ func respondTradeError(ctx *gin.Context, err error, resource string) {
 		respondError(ctx, http.StatusNotFound, "资源不存在")
 	case errors.Is(err, model.ErrInvalidIdempotencyKey), errors.Is(err, model.ErrEmptyCartSelection),
 		errors.Is(err, model.ErrInvalidRefundAmount), errors.Is(err, model.ErrInvalidCouponInput),
-		errors.Is(err, model.ErrInvalidUserID):
+		errors.Is(err, model.ErrInvalidUserID), errors.Is(err, model.ErrInvalidCallbackSignature),
+		errors.Is(err, model.ErrCallbackAmountMismatch):
+		// 400：报文本身有问题（签名伪造、金额对不上）——调用方（渠道模拟器）应修正后重新发起。
 		respondError(ctx, http.StatusBadRequest, err.Error())
 	case errors.Is(err, model.ErrIdempotencyConflict), errors.Is(err, model.ErrInvalidOrderTransition),
 		errors.Is(err, model.ErrPaymentAlreadyExists), errors.Is(err, model.ErrRefundAlreadyPending),
-		errors.Is(err, model.ErrInsufficientStock), // 下单事务内预占失败：合法请求撞上库存现状，可改数量后重试
+		errors.Is(err, model.ErrInsufficientStock),          // 下单事务内预占失败：合法请求撞上库存现状，可改数量后重试
+		errors.Is(err, model.ErrCallbackOrderStateConflict), // 乱序回调（已取消订单收到成功）：挂起进人工通道
 		errors.Is(err, model.ErrCouponNotClaimable), errors.Is(err, model.ErrCouponAlreadyClaimed),
 		errors.Is(err, model.ErrReviewDuplicate), errors.Is(err, model.ErrReviewNotEligible),
 		errors.Is(err, model.ErrTaskNotRetryable):

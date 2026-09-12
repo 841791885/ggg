@@ -401,15 +401,43 @@ async function createOrderFromCart() {
   } catch (error) { toast(error.message); }
 }
 
-// createPayment 创建支付单并模拟支付成功回调。
-// TODO(PRD-007 进阶点)：真实的"支付推进订单状态"应由 HMAC 签名回调 + 幂等消费完成，
-// 当前 UI 用 SQL 之外的方式直接标记支付单为 success 仅覆盖查询链路，订单状态联动待回调实现后接入。
+// createPayment 创建支付单 → 模拟渠道异步回调（HMAC 签名）→ 轮询真实支付状态直至终态。
+// 说明：浏览器端不持有验签密钥，这里演示"渠道视角"的完整链路；真实项目中回调由渠道服务器发起，
+// 前端只负责轮询结果。学习用途下由页面代演渠道角色。
 async function createPayment(orderID) {
   try {
     const payment = await api(`/api/v1/orders/${orderID}/payments`, { method: "POST" });
-    toast(`支付单 ${payment.payment_no} 已创建（¥${(payment.amount_cent / 100).toFixed(2)}）。注：支付回调与订单状态联动属 PRD-007 进阶点，暂未实现。`);
+    toast(`支付单 ${payment.payment_no} 已创建，等待支付结果…`);
+    // 模拟渠道行为：带签名地通知我们的回调接口（event_no 唯一，重复投递安全）。
+    const order = state.orders.find((o) => o.id === orderID);
+    const eventNo = `evt-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const canonical = `${payment.payment_no}|${order ? order.order_no : ""}|${eventNo}|success|${payment.amount_cent}|${payment.currency}`;
+    const signature = await hmacSha256Hex(MOCK_CHANNEL_SECRET, canonical);
+    await fetch("/api/v1/payment-callbacks/mock", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ payment_no: payment.payment_no, order_no: order ? order.order_no : "", event_no: eventNo, result: "success", amount_cent: payment.amount_cent, currency: payment.currency, signature }),
+    });
+    // 轮询支付单直到非 pending（回调是异步的，UI 展示真实等待过程）。
+    for (let i = 0; i < 10; i++) {
+      const latest = await api(`/api/v1/payments/${payment.payment_no}`);
+      if (latest.status !== "pending") {
+        toast(latest.status === "success" ? "支付成功，订单已进入待发货" : "支付结束：" + latest.status);
+        break;
+      }
+      await new Promise((r) => setTimeout(r, 300));
+    }
     await loadOrderPage();
   } catch (error) { toast(error.message); }
+}
+
+// MOCK_CHANNEL_SECRET 与后端 config.yaml 的 payment.callback_secret 一致（仅开发环境演示用）。
+const MOCK_CHANNEL_SECRET = "mock-channel-secret-dev-only";
+
+// hmacSha256Hex 用 Web Crypto 计算 HMAC-SHA256 并转 hex，与服务端 SignMockCallback 规则对齐。
+async function hmacSha256Hex(secret, message) {
+  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const sig = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(message));
+  return [...new Uint8Array(sig)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
 async function cancelOrder(id) {

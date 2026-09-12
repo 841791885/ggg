@@ -4,9 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"time"
 
 	model "ggg/models"
+	"github.com/go-sql-driver/mysql"
 	"gorm.io/gorm"
 )
 
@@ -22,6 +24,20 @@ func (r *MySQLRepository) CreatePayment(ctx context.Context, payment model.Payme
 func (r *MySQLRepository) GetPaymentByNo(ctx context.Context, userID uint64, paymentNo string) (model.Payment, error) {
 	var payment model.Payment
 	err := r.db.WithContext(ctx).Where("payment_no = ? AND user_id = ?", paymentNo, userID).First(&payment).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return model.Payment{}, model.ErrPaymentNotFound
+	}
+	if err != nil {
+		return model.Payment{}, fmt.Errorf("查询支付单：%w", err)
+	}
+	return payment, nil
+}
+
+// GetPaymentByNoAnyUser 按支付单号查询（不限用户）。仅供渠道回调路径使用：
+// 回调没有登录态，越权面由"只推进该支付单自身状态、不返回他人数据给调用方"控制。
+func (r *MySQLRepository) GetPaymentByNoAnyUser(ctx context.Context, paymentNo string) (model.Payment, error) {
+	var payment model.Payment
+	err := r.db.WithContext(ctx).Where("payment_no = ?", paymentNo).Take(&payment).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return model.Payment{}, model.ErrPaymentNotFound
 	}
@@ -69,4 +85,129 @@ func (r *MySQLRepository) CreateCallbackLog(ctx context.Context, log model.Payme
 		return fmt.Errorf("记录支付回调日志：%w", err)
 	}
 	return nil
+}
+
+// errConcurrentCallbackLost 是内部哨兵错误：本事务在 event_no 唯一键上输给并发请求。
+// 触发外层"以新事务重试一次"，重试会命中"事件号已登记"分支实现幂等返回。
+var errConcurrentCallbackLost = errors.New("并发回调竞争失败，需新事务重试")
+
+// ConsumePaymentCallback 在一个事务内幂等消费支付回调（PRD-007 进阶 A2）。
+// 返回 bool=false 表示该事件此前已被处理过（重复回调），调用方应直接确认成功而不产生二次业务效果。
+//
+// 幂等采用双保险，缺一不可：
+//
+//	① payments.event_no 唯一键：并发下两个相同事件的请求同时通过"查无此事件"检查时，
+//	   后插入者撞 uk_payments_event_no 被拦——这是唯一能对抗时间差的防线（同 Idempotency-Key 模式）。
+//	② status='pending' 前态条件：防不同事件号对同一支付单的竞态（如 success 与 failed 几乎同时到达）。
+func (r *MySQLRepository) ConsumePaymentCallback(ctx context.Context, input ConsumeCallbackInput) (model.Payment, bool, error) {
+	// 竞争失败重试一次（仅一次）：第二次必然命中"事件号已登记"或前态不匹配分支，无需循环。
+	payment, first, err := r.consumePaymentCallbackOnce(ctx, input)
+	if errors.Is(err, errConcurrentCallbackLost) {
+		return r.consumePaymentCallbackOnce(ctx, input)
+	}
+	return payment, first, err
+}
+
+// consumePaymentCallbackOnce 执行一次回调消费事务，是 ConsumePaymentCallback 的"核"；
+// 竞争失败时由外层壳以全新事务重放（见 errConcurrentCallbackLost）。
+func (r *MySQLRepository) consumePaymentCallbackOnce(ctx context.Context, input ConsumeCallbackInput) (model.Payment, bool, error) {
+	var consumed model.Payment
+	firstEffect := false
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// 1. 定位支付单（回调来自渠道，无 user_id 上下文；越权风险由"只按 payment_no 推进自身状态、不暴露数据"控制）。
+		var payment model.Payment
+		if err := tx.Where("payment_no = ?", input.PaymentNo).Take(&payment).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return model.ErrPaymentNotFound
+			}
+			return fmt.Errorf("查询支付单：%w", err)
+		}
+		// 2. 事件号已登记 → 本事件此前已完整处理，幂等返回首次结果。
+		if payment.EventNo != nil && *payment.EventNo == input.EventNo {
+			consumed = payment
+			return nil
+		}
+		// 3. 落回调日志（无论后续成否都留痕；但注意它在事务内——业务失败会连日志一起回滚，
+		//    排查"渠道说发了但我们没记"时需结合渠道侧对账，真实系统会把日志写在独立事务里。学习阶段先保简单一致。）
+		callbackLog := model.PaymentCallbackLog{
+			PaymentNo: input.PaymentNo, EventNo: input.EventNo, Result: input.Result,
+			Payload: input.Payload, Processed: true,
+		}
+		if err := tx.Create(&callbackLog).Error; err != nil {
+			return fmt.Errorf("记录支付回调日志：%w", err)
+		}
+		// 4. 条件推进支付单 pending→目标态；event_no 写入即登记幂等键。
+		toStatus := model.PaymentFailed
+		extra := map[string]any{"event_no": input.EventNo}
+		if input.Result == "success" {
+			toStatus = model.PaymentSuccess
+			extra["paid_at"] = input.PaidAt
+		}
+		result := tx.Model(&model.Payment{}).
+			Where("id = ? AND status = ?", payment.ID, model.PaymentPending).
+			Updates(extraWithStatus(toStatus, extra))
+		if result.Error != nil {
+			var dup *mysql.MySQLError
+			if errors.As(result.Error, &dup) && dup.Number == mysqlErrDupEntry {
+				// ⚠️ InnoDB 死锁/冲突时可能已把本事务选为牺牲者回滚（1213），此后在旧 tx 里的一切读取都不可信；
+				// 正确姿势是放弃当前事务、由外层以全新事务重试一次——重试进入第2步"事件号已登记"分支即幂等返回。
+				return errConcurrentCallbackLost
+			}
+			return fmt.Errorf("推进支付单状态：%w", result.Error)
+		}
+		if result.RowsAffected == 0 {
+			// 支付单已非 pending。两种成因要区分开：
+			//   a) 同一事件已被并发请求完整处理 → 幂等返回首次结果（PRD-007：重复回调确认成功、零副作用）；
+			//   b) 不同事件抢先推进（如 success 后又来 failed）→ 真冲突，拒绝。
+			var current model.Payment
+			if probeErr := tx.Where("id = ?", payment.ID).Take(&current).Error; probeErr != nil {
+				return fmt.Errorf("核对支付单状态：%w", probeErr)
+			}
+			if current.EventNo != nil && *current.EventNo == input.EventNo {
+				consumed = current
+				return nil // firstEffect=false：非首次，幂等确认
+			}
+			return model.ErrCallbackOrderStateConflict
+		}
+		firstEffect = true
+		consumed = payment
+		consumed.Status = toStatus
+		consumed.EventNo = &input.EventNo
+		// 5. 仅成功回调推进订单；订单不存在/状态冲突走异常路径（乱序防御）。
+		if input.Result != "success" {
+			return nil
+		}
+		orderResult := tx.Model(&model.Order{}).
+			Where("id = ? AND status = ?", payment.OrderID, model.OrderStatusPendingPayment).
+			Updates(map[string]any{"status": model.OrderStatusPaid, "paid_at": input.PaidAt})
+		if orderResult.Error != nil {
+			return fmt.Errorf("推进订单状态：%w", orderResult.Error)
+		}
+		if orderResult.RowsAffected == 0 {
+			// 思考点：为什么这里不能静默跳过？钱收了货没了必须显式报错进人工通道（PRD-007 测试要求第6条）。
+			return model.ErrCallbackOrderStateConflict
+		}
+		statusLog := model.OrderStatusLog{
+			OrderID: payment.OrderID, FromStatus: model.OrderStatusPendingPayment, ToStatus: model.OrderStatusPaid,
+			OperatorType: model.OperatorSystem, OperatorID: 0, Remark: "支付成功回调",
+		}
+		if err := tx.Create(&statusLog).Error; err != nil {
+			return fmt.Errorf("写入订单状态日志：%w", err)
+		}
+		return nil
+	})
+	if err != nil {
+		return model.Payment{}, false, err
+	}
+	return consumed, firstEffect, nil
+}
+
+// extraWithStatus 把目标状态并入更新集合，纯语法糖。
+func extraWithStatus(status model.PaymentStatus, extra map[string]any) map[string]any {
+	updates := maps.Clone(extra)
+	if updates == nil {
+		updates = map[string]any{}
+	}
+	updates["status"] = status
+	return updates
 }

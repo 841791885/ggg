@@ -34,7 +34,7 @@
 - **学到**：ACID、行锁、乐观 vs 悲观并发、为什么禁止"先查后改"
 
 ## A2. 模拟支付回调（HMAC + 幂等消费）⭐ 打通闭环的关键
-- **PRD 依据**：PRD-007 | **难度**：★★★ | **状态**：未开始
+- **PRD 依据**：PRD-007 | **难度**：★★★ | **状态**：✅ 已完成（2026-09-12，HMAC 验签+交叉校验+event_no 双保险幂等；同事件并发x5全200仅一次业务效果、错签名400、乱序回调409进人工通道；UI 已改真实回调+轮询）
 - **现状**：支付单停在 pending；UI 提示语里写明了这一缺口（admin-ui/app.js createPayment）
 - **要做**：
   1. `POST /api/v1/payment-callbacks/mock`：验 HMAC 签名→校验金额/单号一致→落 payment_callback_logs

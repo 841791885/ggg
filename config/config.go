@@ -39,6 +39,7 @@ type Config struct {
 	Server   ServerConfig   `yaml:"server"`
 	Database DatabaseConfig `yaml:"database"`
 	Auth     AuthConfig     `yaml:"auth"`
+	Payment  PaymentConfig  `yaml:"payment"`
 	Log      LogConfig      `yaml:"log"`
 }
 
@@ -52,6 +53,12 @@ type LogConfig struct {
 type AuthConfig struct {
 	JWTSecret string   `yaml:"jwt_secret"`
 	TokenTTL  Duration `yaml:"token_ttl"`
+}
+
+// PaymentConfig 表示模拟支付渠道配置（PRD-007 进阶 A2）。
+type PaymentConfig struct {
+	// CallbackSecret 是 HMAC 回调验签密钥，与模拟渠道共享同一值；生产部署应通过环境变量注入而非提交仓库。
+	CallbackSecret string `yaml:"callback_secret"`
 }
 
 // ServerConfig 表示 HTTP 服务配置。
@@ -168,6 +175,9 @@ func (c Config) Validate() error {
 	}
 	if c.Auth.JWTSecret == "" || c.Auth.TokenTTL.Value() <= 0 {
 		return errors.New("auth.jwt_secret 不能为空且 auth.token_ttl 必须大于 0")
+	}
+	if c.Payment.CallbackSecret == "" {
+		return errors.New("payment.callback_secret 不能为空（回调验签密钥）")
 	}
 	if c.Log.Environment != "development" && c.Log.Environment != "production" {
 		return errors.New("log.environment 只能是 development 或 production")

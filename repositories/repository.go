@@ -7,6 +7,17 @@ import (
 	model "ggg/models"
 )
 
+// ConsumeCallbackInput 是一次支付回调事务消费所需的全部参数（PRD-007 进阶 A2）。
+// 验签与报文校验在 service 层完成后才进入这里——repository 只信任"已通过安全校验"的事实。
+type ConsumeCallbackInput struct {
+	PaymentNo  string         // 支付单号，定位支付单
+	EventNo    string         // 渠道事件号，幂等唯一键
+	Result     string         // success / failed
+	AmountCent int64          // 已交叉核对过的渠道金额（仅存档用）
+	PaidAt     time.Time      // 完成时间
+	Payload    map[string]any // 回调原始报文，落 payment_callback_logs 供对账
+}
+
 // ListOrdersQuery 是订单列表查询条件；Admin=true 时忽略 UserID 查全量。
 type ListOrdersQuery struct {
 	UserID   uint64
@@ -127,6 +138,8 @@ type PaymentRepository interface {
 	GetActivePaymentByOrder(context.Context, uint64, uint64) (model.Payment, error)
 	UpdatePaymentResult(context.Context, string, model.PaymentStatus, *string, *time.Time) (model.Payment, error) // paymentNo, from→success, eventNo, paidAt
 	CreateCallbackLog(context.Context, model.PaymentCallbackLog) error
+	ConsumePaymentCallback(context.Context, ConsumeCallbackInput) (model.Payment, bool, error) // 事务内幂等消费回调；bool=是否首次生效
+	GetPaymentByNoAnyUser(context.Context, string) (model.Payment, error)                      // 回调侧按支付单号定位（无用户上下文）
 }
 
 // RefundRepository 定义退款模块需要的数据持久化能力。
