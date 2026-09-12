@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
@@ -16,6 +17,7 @@ import (
 	"ggg/repositories"
 	"ggg/routes"
 	"ggg/services"
+
 	"go.uber.org/zap"
 )
 
@@ -47,24 +49,26 @@ func main() {
 	healthController := controllers.NewHealthController(sqlDB, 2*time.Second)
 
 	// main 是程序的组装入口：Repository -> Service -> Controller -> Router。
-	productRepository := repositories.NewMySQLRepository(gormDB)
-	productService := services.NewProductService(productRepository)
+	// dbRepository 是全库统一仓库实例（实现 Repository 组合接口的全部领域方法）。
+	// 各 service 注入同一实例是有意为之：跨领域事务（如扣库存 + 写订单）必须共享同一连接池。
+	dbRepository := repositories.NewMySQLRepository(gormDB)
+	productService := services.NewProductService(dbRepository)
 	productController := controllers.NewProductController(productService)
-	cartService := services.NewCartService(productRepository)
+	cartService := services.NewCartService(dbRepository)
 	cartController := controllers.NewCartController(cartService)
-	addressService := services.NewAddressService(productRepository)
+	addressService := services.NewAddressService(dbRepository)
 	addressController := controllers.NewAddressController(addressService)
 	// 交易链路服务统一注入完整 Repository，控制器按领域拆分 handler。
-	orderService := services.NewOrderService(productRepository)
-	paymentService := services.NewPaymentService(productRepository, appConfig.Payment.CallbackSecret)
-	refundService := services.NewRefundService(productRepository)
-	couponService := services.NewCouponService(productRepository)
-	reviewService := services.NewReviewService(productRepository)
-	notificationService := services.NewNotificationService(productRepository)
-	taskService := services.NewTaskService(productRepository)
+	orderService := services.NewOrderService(dbRepository)
+	paymentService := services.NewPaymentService(dbRepository, appConfig.Payment.CallbackSecret)
+	refundService := services.NewRefundService(dbRepository)
+	couponService := services.NewCouponService(dbRepository)
+	reviewService := services.NewReviewService(dbRepository)
+	notificationService := services.NewNotificationService(dbRepository)
+	taskService := services.NewTaskService(dbRepository)
 	tradeController := controllers.NewTradeController(orderService, paymentService, refundService, couponService, reviewService, notificationService, taskService)
-	userService := services.NewUserService(productRepository)
-	authService := services.NewAuthService(productRepository, appConfig.Auth.JWTSecret, appConfig.Auth.TokenTTL.Value())
+	userService := services.NewUserService(dbRepository)
+	authService := services.NewAuthService(dbRepository, appConfig.Auth.JWTSecret, appConfig.Auth.TokenTTL.Value())
 	userController := controllers.NewUserController(struct {
 		*services.UserService
 		*services.AuthService
@@ -73,6 +77,16 @@ func main() {
 	router, err := routes.New(healthController, productController, cartController, addressController, tradeController, userController, appConfig.Auth.JWTSecret)
 	if err != nil {
 		zap.L().Fatal("创建路由失败", zap.Error(err))
+	}
+
+	// worker 后台任务消费者（PRD-008 A3）：独立 ctx 控制启停，WaitGroup 保证"手头任务干完再退出"。
+	workerCtx, stopWorker := context.WithCancel(context.Background())
+	var workerDone sync.WaitGroup
+	if appConfig.Worker.Enabled {
+		worker := services.NewWorkerService(dbRepository, appConfig.Worker.ScanInterval.Value())
+		// WaitGroup.Go（Go 1.25+）= Add(1)+go func(){defer Done(); f()}() 的官方封装，
+		// 少写三行、杜绝"忘了 Add/Done 配对"这类经典并发 bug。
+		workerDone.Go(func() { worker.Start(workerCtx) })
 	}
 
 	server := &http.Server{
@@ -101,7 +115,8 @@ func main() {
 	case <-shutdownSignal.Done():
 	}
 
-	// Shutdown 会停止接收新请求，并在超时前等待正在处理的请求结束。
+	// 停机顺序：先掐 worker 的电源（不再领新任务），再关 HTTP，最后等 worker 收尾。
+	stopWorker()
 	shutdownContext, cancelShutdown := context.WithTimeout(
 		context.Background(),
 		appConfig.Server.ShutdownTimeout.Value(),
@@ -110,6 +125,8 @@ func main() {
 	if err := server.Shutdown(shutdownContext); err != nil {
 		zap.L().Error("HTTP 服务关闭失败", zap.Error(err))
 	}
+	// Wait 阻塞直到 worker goroutine 确认退出——没有它，main 返回时 goroutine 会被强杀在半途。
+	workerDone.Wait()
 
 	if err := <-serverErrors; err != nil && !errors.Is(err, http.ErrServerClosed) {
 		zap.L().Error("HTTP 服务退出错误", zap.Error(err))

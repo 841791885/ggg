@@ -34,6 +34,9 @@ auth:
   token_ttl: 2h
 payment:
   callback_secret: "test-callback-secret"
+worker:
+  enabled: true
+  scan_interval: 10s
 log:
   environment: "development"
   level: "debug"

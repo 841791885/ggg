@@ -62,3 +62,17 @@ func (r *MySQLRepository) MarkAllNotificationsRead(ctx context.Context, userID u
 	}
 	return nil
 }
+
+// HasNotificationLike 判断用户是否已有同类型同标题的通知。
+// worker 通知发送的幂等判重（学习期简化方案）：以 user+type+title 为业务键，
+// 任务重试时第二次进来查到已存在即静默成功。真实系统应使用显式 dedup_key 列 + 唯一索引。
+func (r *MySQLRepository) HasNotificationLike(ctx context.Context, userID uint64, notifType, title string) (bool, error) {
+	var count int64
+	err := r.db.WithContext(ctx).Model(&model.Notification{}).
+		Where("user_id = ? AND type = ? AND title = ?", userID, notifType, title).
+		Count(&count).Error
+	if err != nil {
+		return false, fmt.Errorf("查询通知是否已存在：%w", err)
+	}
+	return count > 0, nil
+}

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	model "ggg/models"
+
 	"github.com/go-sql-driver/mysql"
 	"gorm.io/gorm"
 )
@@ -150,7 +151,7 @@ func (r *MySQLRepository) consumePaymentCallbackOnce(ctx context.Context, input 
 			var dup *mysql.MySQLError
 			if errors.As(result.Error, &dup) && dup.Number == mysqlErrDupEntry {
 				// ⚠️ InnoDB 死锁/冲突时可能已把本事务选为牺牲者回滚（1213），此后在旧 tx 里的一切读取都不可信；
-				// 正确姿势是放弃当前事务、由外层以全新事务重试一次——重试进入第2步"事件号已登记"分支即幂等返回。
+				// 正确姿势是放弃当前事务、由外层以全新事务重试一次——重试进入第 2 步"事件号已登记"分支即幂等返回。
 				return errConcurrentCallbackLost
 			}
 			return fmt.Errorf("推进支付单状态：%w", result.Error)
@@ -184,7 +185,7 @@ func (r *MySQLRepository) consumePaymentCallbackOnce(ctx context.Context, input 
 			return fmt.Errorf("推进订单状态：%w", orderResult.Error)
 		}
 		if orderResult.RowsAffected == 0 {
-			// 思考点：为什么这里不能静默跳过？钱收了货没了必须显式报错进人工通道（PRD-007 测试要求第6条）。
+			// 思考点：为什么这里不能静默跳过？钱收了货没了必须显式报错进人工通道（PRD-007 测试要求第 6 条）。
 			return model.ErrCallbackOrderStateConflict
 		}
 		statusLog := model.OrderStatusLog{
@@ -193,6 +194,33 @@ func (r *MySQLRepository) consumePaymentCallbackOnce(ctx context.Context, input 
 		}
 		if err := tx.Create(&statusLog).Error; err != nil {
 			return fmt.Errorf("写入订单状态日志：%w", err)
+		}
+		// ── 撤销闹钟：支付成功了，把"到期自动关单"任务作废 ──
+		// 不做的后果：worker 到点照样触发关单流程——虽然 CancelOrderBySystem 的状态机会拒绝
+		// （订单已是 paid），但让一个注定失败的任务空跑一轮不如当场注销。
+		// JSON_EXTRACT 从 payload 里按 JSON 路径取 order_id 匹配——MySQL 原生 JSON 函数；
+		// 学习期用它是合理的偷懒，量大后应给 background_tasks 加 related_order_id 索引列替代。
+		if err := tx.Model(&model.BackgroundTask{}).
+			Where("task_type = ? AND status = ? AND JSON_EXTRACT(payload, '$.order_id') = ?", "order_timeout_close", model.TaskPending, payment.OrderID).
+			Update("status", model.TaskSucceeded).Error; err != nil {
+			return fmt.Errorf("作废超时关单任务：%w", err)
+		}
+		// ── 埋新事件：登记"发支付成功站内信"任务（Outbox 生产端）──
+		// 与上面的状态推进在同一个事务里：回调业务效果落库的瞬间，通知承诺也一定落库了——
+		// 不存在"订单显示已支付但用户永远收不到通知"的缝隙。这就是 Outbox 模式的价值。
+		var paidOrder model.Order
+		if err := tx.Select("order_no").First(&paidOrder, payment.OrderID).Error; err != nil {
+			return fmt.Errorf("查询已支付订单号：%w", err)
+		}
+		notifyTask := model.BackgroundTask{
+			TaskType:    "notification_send",
+			Payload:     map[string]any{"user_id": payment.UserID, "type": "payment", "title": "支付成功", "content": fmt.Sprintf("订单 %s 已支付成功", paidOrder.OrderNo)},
+			Status:      model.TaskPending,
+			MaxAttempts: 3,
+			NextRunAt:   input.PaidAt, // 立即到期：下一个心跳（≤5秒）就该送达
+		}
+		if err := tx.Create(&notifyTask).Error; err != nil {
+			return fmt.Errorf("登记支付通知任务：%w", err)
 		}
 		return nil
 	})

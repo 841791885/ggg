@@ -28,3 +28,8 @@ payment:
 log:
   environment: "development"
   level: "debug"
+
+worker:
+  # A3 后台任务消费者：超时关单 + 站内信投递。调试 HTTP 时可临时关掉避免数据被自动改动
+  enabled: true
+  scan_interval: 5s

@@ -40,6 +40,7 @@ type Config struct {
 	Database DatabaseConfig `yaml:"database"`
 	Auth     AuthConfig     `yaml:"auth"`
 	Payment  PaymentConfig  `yaml:"payment"`
+	Worker   WorkerConfig   `yaml:"worker"`
 	Log      LogConfig      `yaml:"log"`
 }
 
@@ -53,6 +54,13 @@ type LogConfig struct {
 type AuthConfig struct {
 	JWTSecret string   `yaml:"jwt_secret"`
 	TokenTTL  Duration `yaml:"token_ttl"`
+}
+
+// WorkerConfig 是后台任务消费者配置（PRD-008 进阶 A3）。
+// Enabled 提供开关：学习期调试 HTTP 接口时可能不希望 worker 自动改数据，关掉即可。
+type WorkerConfig struct {
+	Enabled      bool     `yaml:"enabled"`
+	ScanInterval Duration `yaml:"scan_interval"`
 }
 
 // PaymentConfig 表示模拟支付渠道配置（PRD-007 进阶 A2）。
@@ -178,6 +186,9 @@ func (c Config) Validate() error {
 	}
 	if c.Payment.CallbackSecret == "" {
 		return errors.New("payment.callback_secret 不能为空（回调验签密钥）")
+	}
+	if c.Worker.Enabled && c.Worker.ScanInterval.Value() <= 0 {
+		return errors.New("worker.enabled 为 true 时 worker.scan_interval 必须大于 0")
 	}
 	if c.Log.Environment != "development" && c.Log.Environment != "production" {
 		return errors.New("log.environment 只能是 development 或 production")

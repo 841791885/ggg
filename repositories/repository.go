@@ -18,6 +18,12 @@ type ConsumeCallbackInput struct {
 	Payload    map[string]any // 回调原始报文，落 payment_callback_logs 供对账
 }
 
+// TaskContext 随任务一起传给 handler：任务本体 + 仓库句柄（handler 需要跨模块读写订单/通知）。
+type TaskContext struct {
+	Task       model.BackgroundTask
+	Repository Repository
+}
+
 // ListOrdersQuery 是订单列表查询条件；Admin=true 时忽略 UserID 查全量。
 type ListOrdersQuery struct {
 	UserID   uint64
@@ -123,6 +129,7 @@ type OrderRepository interface {
 	UpdateOrderStatus(context.Context, uint64, uint64, model.OrderStatus, map[string]any) (model.Order, error) // userID, orderID, to；条件含当前状态
 	CreateOrderStatusLog(context.Context, model.OrderStatusLog) error
 	CancelOrder(context.Context, uint64, uint64) (model.Order, error) // userID, orderID
+	CancelOrderBySystem(context.Context, uint64) (model.Order, error) // worker 超时关单：无用户身份、操作者记 system
 
 	ListOrderStatusLogs(context.Context, uint64) ([]model.OrderStatusLog, error)
 
@@ -150,7 +157,7 @@ type RefundRepository interface {
 	AdminListRefunds(context.Context, ListRefundsQuery) (int64, []model.Refund, error)
 	AdminReviewRefund(context.Context, uint64, model.RefundStatus, uint64) (model.Refund, error) // pending→approved/rejected
 	UpdateOrderItemRefundStatus(context.Context, uint64, model.ItemRefundStatus) error
-	GetOrderItemForUser(context.Context, uint64, uint64) (model.OrderItem, model.Order, error) // userID, itemID → 项+订单
+	GetOrderItemForUser(context.Context, uint64, uint64) (model.OrderItem, model.Order, error) // userID, itemID → 项 + 订单
 }
 
 // CouponRepository 定义优惠券模块需要的数据持久化能力。
@@ -180,6 +187,7 @@ type NotificationRepository interface {
 	ListNotifications(context.Context, uint64, int, int) (int64, []model.Notification, error)
 	MarkNotificationRead(context.Context, uint64, uint64) error
 	MarkAllNotificationsRead(context.Context, uint64) error
+	HasNotificationLike(context.Context, uint64, string, string) (bool, error) // worker 通知幂等判重：user+type+title
 }
 
 // TaskRepository 定义后台任务模块需要的数据持久化能力。
@@ -187,7 +195,11 @@ type TaskRepository interface {
 	CreateTask(context.Context, model.BackgroundTask) (model.BackgroundTask, error)
 	ListTasks(context.Context, ListTasksQuery) (int64, []model.BackgroundTask, error)
 	GetTaskByID(context.Context, uint64) (model.BackgroundTask, error)
-	RetryTask(context.Context, uint64, uint64) (model.BackgroundTask, error) // taskID, operatorID；仅 failed
+	RetryTask(context.Context, uint64, uint64) (model.BackgroundTask, error)     // taskID, operatorID；仅 failed
+	ClaimDueTask(context.Context, time.Time) (model.BackgroundTask, bool, error) // worker 领取到期任务（条件更新即锁）
+	MarkTaskSucceeded(context.Context, uint64) error
+	MarkTaskFailedOrRetry(context.Context, uint64, string, time.Duration) error // 未达上限退避回 pending，达到定格 failed
+	RevertRunningTasks(context.Context) (int64, error)                          // 启动时回收崩溃遗留的 running 任务
 }
 
 // Repository 是当前 MySQL 仓库的完整能力集合，便于旧 Service 统一注入。

@@ -28,12 +28,12 @@ func isDeadlockError(err error) bool {
 
 // maxDeadlockRetries 死锁重试次数上限。死锁是瞬态冲突（两个事务互相等对方的行锁），
 // MySQL 检测到环后会主动杀掉代价小的那个（errno 1213）并重放整笔事务即可自愈；
-// 限次防止病态热竞争下无限循环烧CPU。
+// 限次防止病态热竞争下无限循环烧 CPU。
 const maxDeadlockRetries = 3
 
 // CreateOrder 在一个数据库事务内完成：预占库存 → 写订单与订单项 → 记状态日志。
 // 任一步失败整体回滚，保证"订单存在"与"库存已扣"永远同生共死（PRD-005 进阶 A1）。
-// 遇 InnoDB 死锁自动重放整个事务（最多3次、指数退避）；幂等键冲突不重试——那是"已被人抢先建成"，
+// 遇 InnoDB 死锁自动重放整个事务（最多 3 次、指数退避）；幂等键冲突不重试——那是"已被人抢先建成"，
 // 交给 service 层重新查询返回首次结果，重试只会白扣一轮库存。
 func (r *MySQLRepository) CreateOrder(ctx context.Context, order model.Order) (model.Order, error) {
 	var lastErr error
@@ -86,6 +86,23 @@ func (r *MySQLRepository) createOrderOnce(ctx context.Context, order model.Order
 		if err := tx.Create(&statusLog).Error; err != nil {
 			return fmt.Errorf("写入订单状态日志：%w", err)
 		}
+		// ── Outbox 模式（PRD-008 A3）：给这张订单埋一颗"超时自动关单"的种子 ──
+		// 为什么写在同一个事务里？如果拆成"提交订单后再插任务"，两步之间进程崩溃，
+		// 订单就永远没人关、库存被永久占用——Outbox 保证【订单存在 ⇔ 关单承诺存在】同生共死。
+		// NextRunAt = *order.ExpiresAt：任务的"闹钟时间"就是订单的死刑时间，
+		// worker 的通用扫描条件（next_run_at <= now）不需要为超时关单写任何特殊调度逻辑。
+		if order.ExpiresAt != nil {
+			timeoutTask := model.BackgroundTask{
+				TaskType:    "order_timeout_close",
+				Payload:     map[string]any{"order_id": order.ID, "reason": "payment_timeout"},
+				Status:      model.TaskPending,
+				MaxAttempts: 5,
+				NextRunAt:   *order.ExpiresAt,
+			}
+			if err := tx.Create(&timeoutTask).Error; err != nil {
+				return fmt.Errorf("登记超时关单任务：%w", err)
+			}
+		}
 		return nil
 	})
 	if err != nil {
@@ -98,26 +115,40 @@ func (r *MySQLRepository) createOrderOnce(ctx context.Context, order model.Order
 // 关键约束：订单的读取、状态判断、更新必须全在事务内——事务外读到的状态是过期快照，
 // 拿它做"能否取消"的判断等于把超卖时间差请回来。
 func (r *MySQLRepository) CancelOrder(ctx context.Context, userID, orderID uint64) (model.Order, error) {
+	return r.cancelOrderInner(ctx, userID, orderID, model.OperatorUser, "用户取消订单")
+}
+
+// cancelOrderInner 是消费者取消与系统关单共享的事务主体（两个公开入口 CancelOrder / CancelOrderBySystem 都转发到这里）。
+// 设计意图：取消动作的业务规则（前态校验、释放库存、写日志）对用户和系统必须【完全一致】——
+// 复制两份实现迟早漂移出 bug（比如系统版忘了释放库存），所以只留一份闭包，用参数表达差异：
+//   - operatorType/remark：状态日志的署名不同，审计时能区分"用户主动取消"和"超时被关"；
+//   - userID：用户路径用它做所有权过滤（WHERE user_id），系统路径传 0 并在 probe 分支跳过越权检查。
+func (r *MySQLRepository) cancelOrderInner(ctx context.Context, userID, orderID uint64, operatorType model.OperatorType, remark string) (model.Order, error) {
 	var cancelled model.Order
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// 思考题①的答案：防"两个 cancel 都成功"不靠先查后判，靠 WHERE status='pending_payment'
 		// 的条件更新——第一个事务提交后行状态已变，第二个事务的 WHERE 匹配不到，RowsAffected=0。
 		// 并发时第二个请求会阻塞在行锁上，等第一个提交后拿到新值再判定失败。
 		result := tx.Model(&model.Order{}).
-			Where("id = ? AND user_id = ? AND status = ?", orderID, userID, model.OrderStatusPendingPayment).
+			Where("id = ? AND status = ?", orderID, model.OrderStatusPendingPayment).
 			Updates(map[string]any{"status": model.OrderStatusCancelled, "cancelled_at": time.Now().UTC()})
 		if result.Error != nil {
 			return fmt.Errorf("取消订单：%w", result.Error)
 		}
 		if result.RowsAffected == 0 {
-			// 思考题③：区分"订单不存在/越权"与"状态不允许"。用一条只读查询补齐语义（同一事务内，无过期问题）。
+			// 一行都没改到 → 三种可能：单不存在 / 是别人的单 / 状态不对。
+			// 但 UPDATE 的 WHERE 把三者混在一起了，API 需要不同的错误码（404 vs 409）——
+			// 所以补一条只读查询"验尸"，分辨到底死因是哪个（仍在同一事务内，读到的一定是当前真相）。
 			var probe model.Order
-			probeErr := tx.Select("id", "status").Where("id = ? AND user_id = ?", orderID, userID).Take(&probe).Error
+			probeErr := tx.Select("id", "user_id", "status").Take(&probe, orderID).Error
 			if errors.Is(probeErr, gorm.ErrRecordNotFound) {
-				return model.ErrOrderNotFound // 不存在或他人订单，统一按不存在处理
+				return model.ErrOrderNotFound
 			}
 			if probeErr != nil {
 				return fmt.Errorf("核对订单状态：%w", probeErr)
+			}
+			if operatorType == model.OperatorUser && probe.UserID != userID {
+				return model.ErrOrderNotFound // 越权按不存在处理，不泄露资源存在性（系统路径跳过此检查：它没有用户身份）
 			}
 			return model.ErrInvalidOrderTransition // 存在但非待支付（如已支付）
 		}
@@ -132,7 +163,7 @@ func (r *MySQLRepository) CancelOrder(ctx context.Context, userID, orderID uint6
 		}
 		statusLog := model.OrderStatusLog{
 			OrderID: orderID, FromStatus: model.OrderStatusPendingPayment, ToStatus: model.OrderStatusCancelled,
-			OperatorType: model.OperatorUser, OperatorID: userID, Remark: "用户取消订单",
+			OperatorType: operatorType, OperatorID: userID, Remark: remark,
 		}
 		if err := tx.Create(&statusLog).Error; err != nil {
 			return fmt.Errorf("写入订单状态日志：%w", err)
@@ -143,6 +174,13 @@ func (r *MySQLRepository) CancelOrder(ctx context.Context, userID, orderID uint6
 		return model.Order{}, err
 	}
 	return cancelled, nil
+}
+
+// CancelOrderBySystem 供 worker 超时关单使用：与 CancelOrder 同一套事务逻辑，
+// 差别仅在身份——无 user_id 过滤（系统发起）、状态日志 OperatorType=system。
+// 复用而非复制：把 CancelOrder 的闭包主体提取为 cancelOrderTx，两个入口只差外壳参数。
+func (r *MySQLRepository) CancelOrderBySystem(ctx context.Context, orderID uint64) (model.Order, error) {
+	return r.cancelOrderInner(ctx, 0, orderID, model.OperatorSystem, "超时自动关单")
 }
 
 // releaseStockTx 按订单明细反向归还预占库存：UPDATE skus SET stock = stock + n WHERE id = ?。
