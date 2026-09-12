@@ -111,8 +111,7 @@ func (s *OrderService) buildPreviewRow(ctx context.Context, item *model.CartItem
 	return row, nil
 }
 
-// Create 从购物车选中项创建订单：校验幂等键 → 重算预览 → 固化快照 → 写订单与订单项。
-// TODO(PRD-005 进阶): 创建订单与库存预占必须在同一事务内用条件原子更新完成，防超卖（见 docs/ADVANCED-TASKS.md A1）。
+// Create 从购物车选中项创建订单：校验幂等键 → 重算预览 → 固化快照 → 事务内预占库存并落库。
 func (s *OrderService) Create(ctx context.Context, input CreateOrderInput) (model.Order, error) {
 	if input.UserID == 0 {
 		return model.Order{}, model.ErrInvalidUserID
@@ -126,8 +125,12 @@ func (s *OrderService) Create(ctx context.Context, input CreateOrderInput) (mode
 
 	address, err := s.repository.GetAddress(ctx, input.UserID, input.AddressID)
 	if err != nil {
+		if isModelNotFound(err) {
+			return model.Order{}, model.ErrAddressNotFound // 透传 sentinel，让 API 层映射为 404（他人/不存在资源不泄露细节）
+		}
 		return model.Order{}, fmt.Errorf("查询收货地址：%w", err)
 	}
+
 	preview, err := s.Preview(ctx, input.UserID)
 	if err != nil {
 		return model.Order{}, err
@@ -139,8 +142,6 @@ func (s *OrderService) Create(ctx context.Context, input CreateOrderInput) (mode
 	fingerprint := requestFingerprint(preview, address)
 
 	// 幂等重放：同一用户同一 key 命中已有订单时，指纹一致返回首次结果，不一致说明复用了 key 提交不同内容。
-	// TODO(PRD-005 进阶): 并发下两个相同 key 的请求可能同时未命中并双双插入，靠数据库唯一键 uk_orders_user_idempotency 兜底；
-	// 捕获重复键冲突后应"重新查询并返回首次结果"，而不是直接报错（见 docs/ADVANCED-TASKS.md A1）。
 	if existing, err := s.repository.GetOrderByIdempotencyKey(ctx, input.UserID, shortKey); err == nil {
 		if existing.RequestHash != fingerprint {
 			return model.Order{}, model.ErrIdempotencyConflict
@@ -172,16 +173,23 @@ func (s *OrderService) Create(ctx context.Context, input CreateOrderInput) (mode
 			UnitPriceCent: row.UnitPriceCent, Quantity: row.Quantity, SubtotalCent: row.SubtotalCent,
 		})
 	}
+	// 落库：repository 在单事务内完成 预占库存→写订单/订单项/状态日志；任一步失败整单回滚。
 	created, err := s.repository.CreateOrder(ctx, order)
 	if err != nil {
-		return model.Order{}, fmt.Errorf("创建订单：%w", err)
-	}
-	logErr := s.repository.CreateOrderStatusLog(ctx, model.OrderStatusLog{
-		OrderID: created.ID, FromStatus: "", ToStatus: created.Status,
-		OperatorType: model.OperatorUser, OperatorID: input.UserID, Remark: "创建订单",
-	})
-	if logErr != nil {
-		return model.Order{}, logErr
+		// 并发兜底：两个相同幂等键的请求同时通过上面的重放查询时，后到的那个会撞唯一键
+		// uk_orders_user_idempotency 并被翻译为 ErrIdempotencyConflict——此时首次请求已建单成功，
+		// 重新查询返回那份结果即可（本次事务已整体回滚，我们的扣减未生效，不会重复占库存）。
+		if errors.Is(err, model.ErrIdempotencyConflict) {
+			existing, qErr := s.repository.GetOrderByIdempotencyKey(ctx, input.UserID, shortKey)
+			if qErr == nil && existing.RequestHash == fingerprint {
+				return existing, nil
+			}
+			if qErr != nil && !isModelNotFound(qErr) {
+				return model.Order{}, fmt.Errorf("查询幂等订单：%w", qErr)
+			}
+			return model.Order{}, err // 查不到或内容不符：交回冲突错误由 API 层报 409
+		}
+		return model.Order{}, err
 	}
 	return created, nil
 }
@@ -214,28 +222,13 @@ func (s *OrderService) Get(ctx context.Context, userID, orderID uint64) (model.O
 	return order, logs, nil
 }
 
-// Cancel 消费者取消待支付订单。状态机校验 + 带前态条件的更新防止并发重复取消。
-// TODO(PRD-005 进阶): 取消、释放预占库存和状态日志需合并到同一事务（见 docs/ADVANCED-TASKS.md A1）。
+// Cancel 消费者取消待支付订单：repository 在单事务内完成 条件推进状态→释放预占库存→记日志。
+// 注意"能否取消"的判断已下沉为 SQL 前态条件，service 不再事务外预读状态——过期快照上的判断不可信。
 func (s *OrderService) Cancel(ctx context.Context, userID, orderID uint64) (model.Order, error) {
-	order, err := s.repository.GetOrderByID(ctx, userID, orderID)
-	if err != nil {
-		return model.Order{}, fmt.Errorf("查询订单：%w", err)
+	if userID == 0 {
+		return model.Order{}, model.ErrInvalidUserID
 	}
-	if !order.Status.CanTransitionTo(model.OrderStatusCancelled) {
-		return model.Order{}, model.ErrInvalidOrderTransition
-	}
-	now := time.Now().UTC()
-	updated, err := s.repository.UpdateOrderStatus(ctx, userID, orderID, model.OrderStatusCancelled, map[string]any{"cancelled_at": &now})
-	if err != nil {
-		return model.Order{}, fmt.Errorf("取消订单：%w", err)
-	}
-	if err := s.repository.CreateOrderStatusLog(ctx, model.OrderStatusLog{
-		OrderID: orderID, FromStatus: order.Status, ToStatus: updated.Status,
-		OperatorType: model.OperatorUser, OperatorID: userID, Remark: "用户取消订单",
-	}); err != nil {
-		return model.Order{}, err
-	}
-	return updated, nil
+	return s.repository.CancelOrder(ctx, userID, orderID)
 }
 
 // ConfirmReceipt 消费者确认收货，仅允许已发货订单。

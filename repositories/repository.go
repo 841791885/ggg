@@ -111,6 +111,8 @@ type OrderRepository interface {
 	ListOrdersByUser(context.Context, uint64, ListOrdersQuery) (int64, []model.Order, error)
 	UpdateOrderStatus(context.Context, uint64, uint64, model.OrderStatus, map[string]any) (model.Order, error) // userID, orderID, to；条件含当前状态
 	CreateOrderStatusLog(context.Context, model.OrderStatusLog) error
+	CancelOrder(context.Context, uint64, uint64) (model.Order, error) // userID, orderID
+
 	ListOrderStatusLogs(context.Context, uint64) ([]model.OrderStatusLog, error)
 
 	AdminGetOrderByID(context.Context, uint64) (model.Order, error)

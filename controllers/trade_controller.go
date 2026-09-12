@@ -71,7 +71,7 @@ func respondTradeError(ctx *gin.Context, err error, resource string) {
 	case errors.Is(err, model.ErrOrderNotFound), errors.Is(err, model.ErrPaymentNotFound),
 		errors.Is(err, model.ErrRefundNotFound), errors.Is(err, model.ErrCouponNotFound),
 		errors.Is(err, model.ErrReviewNotFound), errors.Is(err, model.ErrNotificationNotFound),
-		errors.Is(err, model.ErrTaskNotFound):
+		errors.Is(err, model.ErrTaskNotFound), errors.Is(err, model.ErrAddressNotFound):
 		// 他人资源统一按不存在处理（404），不泄露资源是否存在。
 		respondError(ctx, http.StatusNotFound, "资源不存在")
 	case errors.Is(err, model.ErrInvalidIdempotencyKey), errors.Is(err, model.ErrEmptyCartSelection),
@@ -80,6 +80,7 @@ func respondTradeError(ctx *gin.Context, err error, resource string) {
 		respondError(ctx, http.StatusBadRequest, err.Error())
 	case errors.Is(err, model.ErrIdempotencyConflict), errors.Is(err, model.ErrInvalidOrderTransition),
 		errors.Is(err, model.ErrPaymentAlreadyExists), errors.Is(err, model.ErrRefundAlreadyPending),
+		errors.Is(err, model.ErrInsufficientStock), // 下单事务内预占失败：合法请求撞上库存现状，可改数量后重试
 		errors.Is(err, model.ErrCouponNotClaimable), errors.Is(err, model.ErrCouponAlreadyClaimed),
 		errors.Is(err, model.ErrReviewDuplicate), errors.Is(err, model.ErrReviewNotEligible),
 		errors.Is(err, model.ErrTaskNotRetryable):
