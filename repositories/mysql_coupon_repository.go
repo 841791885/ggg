@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	model "ggg/models"
+
 	"gorm.io/gorm"
 )
 
@@ -132,4 +134,89 @@ func (r *MySQLRepository) ListUserCoupons(ctx context.Context, userID uint64) ([
 		return nil, fmt.Errorf("查询用户优惠券列表：%w", err)
 	}
 	return coupons, nil
+}
+
+// CountUserCouponsByTemplate 统计某用户在某模板下已持有的张数（service 层做限领预检用）。
+func (r *MySQLRepository) CountUserCouponsByTemplate(ctx context.Context, userID, templateID uint64) (int64, error) {
+	var count int64
+	err := r.db.WithContext(ctx).Model(&model.UserCoupon{}).
+		Where("user_id = ? AND template_id = ?", userID, templateID).Count(&count).Error
+	if err != nil {
+		return 0, fmt.Errorf("统计用户持券数量：%w", err)
+	}
+	return count, nil
+}
+
+// ClaimCouponTx 在一个事务内完成"扣发行量 + 插持有记录"，是防超发的核心（PRD-009 A4）。
+//
+// ── 为什么必须是一个事务？──
+// 领一张券要改两张表：coupon_templates.remaining（总量 -1）和 user_coupons（+一行记录）。
+// 如果分开提交：扣了量但插记录失败 → 用户的券凭空蒸发；插了记录但扣量失败 → 超发。
+// 同事务保证【量减 ⇔ 券增】同生共死——和 A1 下单扣库存完全同构。
+//
+// ── 并发安全靠什么？两道闸门 ──
+// ① remaining 条件更新：UPDATE ... WHERE remaining > 0。
+//
+//	"查剩余量→判断→扣减"三步里，只有扣减这条 SQL 是原子的（行锁内比较 + 修改一气呵成），
+//	所以判断必须写进 WHERE，绝不能留在 Go 代码里（先查后改=超卖老路，A1 讲过三遍的那个坑）。
+//
+// ② (user_id, template_id, seq) 唯一键：
+//
+//	每人限领 N 张靠 seq 编号实现——本次的 seq = 已持有张数 +1。
+//	同一用户连点两次领取，两个请求可能都算出 seq=2（各自 COUNT 时对方还没插），
+//	但唯一键让第二个 INSERT 撞键失败。应用层的 count<preUserLimit 预检只是快速失败优化，
+//	正确性由数据库兜底——双保险模式第四次出现（幂等键/默认地址/event_no 都是它）。
+func (r *MySQLRepository) ClaimCouponTx(ctx context.Context, userID, templateID uint64, perUserLimit int) (model.UserCoupon, error) {
+	var claimed model.UserCoupon
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// ── 闸门①：原子扣发行量 ──
+		// 生成的 SQL：UPDATE coupon_templates SET remaining = remaining - 1 WHERE id=? AND remaining > 0
+		// RowsAffected=0 只可能是 remaining 已经是 0（券被抢光）——注意这不是 error，
+		// MySQL 觉得"没匹配到行"是正常结果，翻译责任在我们（A1 同款判断）。
+		result := tx.Model(&model.CouponTemplate{}).
+			Where("id = ? AND remaining > 0", templateID).
+			UpdateColumn("remaining", gorm.Expr("remaining - 1"))
+		if result.Error != nil {
+			return fmt.Errorf("扣减优惠券发行量：%w", result.Error)
+		}
+		if result.RowsAffected == 0 {
+			return model.ErrCouponNotClaimable // 抢光了：语义上仍是"当前不可领取"
+		}
+
+		// ── 计算本次 seq（第几张）──
+		// COUNT 和下面的 INSERT 在同一事务里。会不会两个事务同时 COUNT 到相同值？
+		// 会——这正是唯一键存在的理由：撞键分支处理这个竞态，而不是假装 COUNT 可靠。
+		var held int64
+		if err := tx.Model(&model.UserCoupon{}).
+			Where("user_id = ? AND template_id = ?", userID, templateID).
+			Count(&held).Error; err != nil {
+			return fmt.Errorf("统计用户持券数量：%w", err)
+		}
+		nextSeq := int(held) + 1
+		if nextSeq > perUserLimit {
+			// 超限走 error 返回 → 事务回滚 → 刚才那次 remaining-1 自动撤销。
+			// 这就是"为什么扣量放在事务第一步也没关系"：回滚会收拾一切中途写入。
+			return model.ErrCouponAlreadyClaimed
+		}
+
+		// ── 闸门②：插入持有记录，唯一键裁决并发竞争 ──
+		coupon := model.UserCoupon{
+			UserID: userID, TemplateID: templateID, Seq: nextSeq,
+			Status: model.UserCouponUnused, ClaimedAt: time.Now().UTC(),
+		}
+		if err := tx.Create(&coupon).Error; err != nil {
+			// TranslateError:true（database/mysql.go）已把 MySQL 1062 转成 gorm.ErrDuplicatedKey，
+			// 不用再 errors.As 挖驱动错误号——项目配置替你做了。
+			if errors.Is(err, gorm.ErrDuplicatedKey) {
+				return model.ErrCouponAlreadyClaimed // 同人同 seq 撞键=并发双开被拦下的是你
+			}
+			return fmt.Errorf("写入用户优惠券：%w", err)
+		}
+		claimed = coupon
+		return nil
+	})
+	if err != nil {
+		return model.UserCoupon{}, err
+	}
+	return claimed, nil
 }

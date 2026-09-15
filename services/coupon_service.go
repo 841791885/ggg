@@ -11,8 +11,8 @@ import (
 )
 
 // CouponService 负责优惠券模板管理和用户领取。
-// TODO(PRD-009 进阶): remaining 条件更新防超发、下单事务内占用券与优惠金额分摊未实现（见 docs/ADVANCED-TASKS.md A4/A8）。
-// 本阶段领取只校验有效期和上架状态，唯一键保证每人每模板一张。
+// TODO(PRD-009 进阶): 下单事务内占用券与优惠金额分摊未实现（见 docs/ADVANCED-TASKS.md A8）。
+// 领取已按 A4 落地：remaining 条件更新 + seq 唯一键双保险防超发超领。
 type CouponService struct{ repository repositories.CouponRepository }
 
 // NewCouponService 创建优惠券业务服务。
@@ -105,7 +105,16 @@ func (s *CouponService) DeleteTemplate(ctx context.Context, templateID uint64) e
 	return nil
 }
 
-// Claim 用户领取优惠券：校验上架与有效期后写入持有记录，重复领取由唯一键阻止。
+// Claim 用户领取优惠券（PRD-009 进阶 A4）。
+//
+// 结构是经典的"预检 + 原子执行"两段式：
+//
+//	预检（本函数）：查模板、验状态和有效期——这些值在检查后【可能立刻变化】，
+//	               所以它们只负责给出友好错误，不承担正确性；
+//	执行（ClaimCouponTx）：扣量 + 插记录全在事务里用条件更新裁决，
+//	               并发正确性 100% 由数据库保证（两个闸门详见 repository 层注释）。
+//
+// 类比前端表单校验：客户端校验是为了体验，服务端校验才是为了安全——同一个分层思想。
 func (s *CouponService) Claim(ctx context.Context, userID, templateID uint64) (model.UserCoupon, error) {
 	if userID == 0 {
 		return model.UserCoupon{}, model.ErrInvalidUserID
@@ -115,16 +124,22 @@ func (s *CouponService) Claim(ctx context.Context, userID, templateID uint64) (m
 		return model.UserCoupon{}, fmt.Errorf("查询优惠券模板：%w", err)
 	}
 	now := time.Now().UTC()
-	if template.Status != model.CouponTemplateActive || now.Before(template.StartsAt) || now.After(template.EndsAt) || template.Remaining <= 0 {
+	// 注意这里删掉了旧版的 `template.Remaining <= 0` 判断——它读的是过期快照，
+	// 防不住并发（查到 1 → 百人涌入 → 都以为自己有份）。剩余量的真相由事务里的
+	// WHERE remaining > 0 独裁。保留的这几项（下架/未开始/已结束）是低频变化的配置型条件，预检有效。
+	if template.Status != model.CouponTemplateActive || now.Before(template.StartsAt) || now.After(template.EndsAt) {
 		return model.UserCoupon{}, model.ErrCouponNotClaimable
 	}
-	coupon, err := s.repository.CreateUserCoupon(ctx, model.UserCoupon{
-		UserID: userID, TemplateID: templateID, Status: model.UserCouponUnused, ClaimedAt: now,
-	})
+	// 限领预检：多数超限请求在这里就被拦下（省一次事务开销），
+	// 漏网的并发竞态由 seq 唯一键收口——这就是"快速失败 + 兜底正确"的标准分工。
+	held, err := s.repository.CountUserCouponsByTemplate(ctx, userID, templateID)
 	if err != nil {
-		return model.UserCoupon{}, fmt.Errorf("领取优惠券：%w", err)
+		return model.UserCoupon{}, err
 	}
-	return coupon, nil
+	if held >= int64(template.PerUserLimit) {
+		return model.UserCoupon{}, model.ErrCouponAlreadyClaimed
+	}
+	return s.repository.ClaimCouponTx(ctx, userID, templateID, template.PerUserLimit)
 }
 
 // ListMine 查询当前用户持有的全部券。
@@ -135,6 +150,24 @@ func (s *CouponService) ListMine(ctx context.Context, userID uint64) ([]model.Us
 	coupons, err := s.repository.ListUserCoupons(ctx, userID)
 	if err != nil {
 		return nil, fmt.Errorf("查询用户优惠券列表：%w", err)
+	}
+	// 补齐券的展示信息（券名/门槛/面额来自模板表）——券包页要显示"满 X 减 Y"，
+	// 只给 template_id 前端无法展示。同一模板的券共用一次查询（map 缓存模板，避免重复查库）。
+	templateCache := map[uint64]model.CouponTemplate{}
+	for i := range coupons {
+		tid := coupons[i].TemplateID
+		tpl, ok := templateCache[tid]
+		if !ok {
+			fetched, err := s.repository.GetCouponTemplate(ctx, tid)
+			if err != nil {
+				continue // 模板被删：保留持有记录但无展示信息，不阻断列表
+			}
+			tpl = fetched
+			templateCache[tid] = fetched
+		}
+		coupons[i].TemplateName = tpl.Name
+		coupons[i].ThresholdCent = tpl.ThresholdCent
+		coupons[i].DiscountCent = tpl.DiscountCent
 	}
 	return coupons, nil
 }

@@ -46,17 +46,25 @@ const (
 )
 
 // UserCoupon 表示用户领取的一张券。当前唯一键按每人每模板一张建模。
+// UserCoupon 是用户持有的一张券。Seq（第几张）参与唯一键 uk_user_coupons_user_template_seq，
+// 它是"每人限领 N 张"的数据库层防线：并发超限时第二个插入撞三元组唯一键被拦（PRD-009 A4）。
 type UserCoupon struct {
 	ID         uint64           `json:"id" gorm:"primaryKey;autoIncrement"`
-	UserID     uint64           `json:"user_id" gorm:"not null;uniqueIndex:uk_user_coupons_user_template,priority:1"`
-	TemplateID uint64           `json:"template_id" gorm:"not null;uniqueIndex:uk_user_coupons_user_template,priority:2;index"`
+	UserID     uint64           `json:"user_id" gorm:"not null;uniqueIndex:uk_user_coupons_user_template_seq,priority:1"`
+	TemplateID uint64           `json:"template_id" gorm:"not null;uniqueIndex:uk_user_coupons_user_template_seq,priority:2;index"`
+	Seq        int              `json:"seq" gorm:"not null;uniqueIndex:uk_user_coupons_user_template_seq,priority:3;default:1"` // 该用户在此模板下的第几张，从 1 起
 	Status     UserCouponStatus `json:"status" gorm:"type:enum('unused','used','expired');not null;default:unused;index"`
-	OrderID    *uint64          `json:"order_id"`
-	ClaimedAt  time.Time        `json:"claimed_at" gorm:"not null"`
-	UsedAt     *time.Time       `json:"used_at"`
-	CreatedAt  time.Time        `json:"created_at"`
-	UpdatedAt  time.Time        `json:"updated_at"`
-	DeletedAt  gorm.DeletedAt   `json:"-" gorm:"index"`
+	// 以下为不落库的展示字段（gorm:"-"）：券包页要显示券名与面额，
+	// 这些属于模板表，由 service 聚合填充，避免前端为每张券再查一次模板。
+	TemplateName  string         `json:"template_name" gorm:"-"`
+	ThresholdCent int64          `json:"threshold_cent" gorm:"-"`
+	DiscountCent  int64          `json:"discount_cent" gorm:"-"`
+	OrderID       *uint64        `json:"order_id"`
+	ClaimedAt     time.Time      `json:"claimed_at" gorm:"not null"`
+	UsedAt        *time.Time     `json:"used_at"`
+	CreatedAt     time.Time      `json:"created_at"`
+	UpdatedAt     time.Time      `json:"updated_at"`
+	DeletedAt     gorm.DeletedAt `json:"-" gorm:"uniqueIndex:uk_user_coupons_user_template_seq,priority:4;index"`
 }
 
 // TableName 显式指定 UserCoupon 对应的 MySQL 表名。
