@@ -121,3 +121,22 @@ func (c *TradeController) ListMyCoupons(ctx *gin.Context) {
 	}
 	respondSuccess(ctx, http.StatusOK, gin.H{"items": items})
 }
+
+// ListPublicCouponTemplates 处理 GET /api/v1/coupons/templates —— 买家券页数据源。
+// 与运营版的差异写死在服务端：强制 status=active，消费者永远看不到未上架模板；
+// 权限只要求"领券"（coupon.claim），不要求"管券"（coupon.manage）——浏览是领取的前置动作。
+func (c *TradeController) ListPublicCouponTemplates(ctx *gin.Context) {
+	page, size := parsePageQuery(ctx)
+	total, templates, err := c.couponService.ListTemplates(ctx.Request.Context(), repositories.ListCouponTemplatesQuery{
+		Status: model.CouponTemplateActive, Page: page, PageSize: size,
+	})
+	if err != nil {
+		respondTradeError(ctx, err, "查询可领取优惠券")
+		return
+	}
+	items := make([]CouponTemplateResponse, len(templates))
+	for i := range templates {
+		items[i] = newCouponTemplateResponse(&templates[i])
+	}
+	respondSuccess(ctx, http.StatusOK, gin.H{"total": total, "list": items})
+}

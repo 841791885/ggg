@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+
 	"go.uber.org/zap"
 
 	model "ggg/models"
@@ -29,11 +30,13 @@ type ListProductsQuery struct {
 	Page     int
 	PageSize int
 	Name     string
+	Status   model.ProductStatus // 空值不过滤；商城页传 on_sale 只看在售（PRD-001"仅上架商品可被消费者查询"）
 }
 
 type ListSKUQuery struct {
 	Page, PageSize int
 	Name           string
+	Status         model.SKUStatus // 空值不过滤；公开入口传 active（消费者只看可售规格）
 }
 
 // MySQLRepository 使用 GORM 将商品保存到 MySQL。
@@ -76,6 +79,9 @@ func (r *MySQLRepository) ListProducts(ctx context.Context, query ListProductsQu
 	databaseQuery := r.db.WithContext(ctx).Model(&model.Product{})
 	if query.Name != "" {
 		databaseQuery = databaseQuery.Where("name LIKE ?", "%"+query.Name+"%")
+	}
+	if query.Status != "" {
+		databaseQuery = databaseQuery.Where("status = ?", query.Status)
 	}
 
 	products := make([]model.Product, 0)
@@ -216,6 +222,9 @@ func (r *MySQLRepository) ListSKU(ctx context.Context, productID uint64, query L
 	if query.Name != "" {
 		db = db.Where("code LIKE ?", "%"+query.Name+"%")
 	}
+	if query.Status != "" {
+		db = db.Where("status = ?", query.Status)
+	}
 	var total int64
 	if err := db.Model(&model.SKU{}).Count(&total).Error; err != nil {
 		return 0, nil, fmt.Errorf("统计 SKU：%w", err)
@@ -280,4 +289,23 @@ func (r *MySQLRepository) UpdateSKUStatus(ctx context.Context, productID, skuID 
 		return model.SKU{}, model.ErrSKUNotFound
 	}
 	return r.GetSKU(ctx, productID, skuID)
+}
+
+// UpdateProductStatus 推进商品销售状态（草稿↔在售↔下架）。
+// 状态合法性由 service 层的状态机把关，这里只负责落库并回读最新值。
+func (r *MySQLRepository) UpdateProductStatus(ctx context.Context, productID uint64, status model.ProductStatus) (model.Product, error) {
+	result := r.db.WithContext(ctx).Model(&model.Product{}).
+		Where("id = ?", productID).
+		Update("status", status)
+	if result.Error != nil {
+		return model.Product{}, fmt.Errorf("更新商品状态：%w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return model.Product{}, model.ErrProductNotFound
+	}
+	product, err := r.GetProduct(ctx, productID)
+	if err != nil {
+		return model.Product{}, err
+	}
+	return *product, nil
 }

@@ -39,7 +39,8 @@ func (c *TradeController) CreateReview(ctx *gin.Context) {
 
 // ListProductReviews 消费者分页查看商品的可见评价（公开接口挂在商品详情下）。
 func (c *TradeController) ListProductReviews(ctx *gin.Context) {
-	productID, ok := parseIDParam(ctx, "id")
+	// 路由参数名与路径模板 :product_id 保持一致（Gin 按名字取值）。
+	productID, ok := parseIDParam(ctx, "product_id")
 	if !ok {
 		return
 	}

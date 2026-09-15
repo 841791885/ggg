@@ -72,6 +72,7 @@ type ProductRepository interface {
 	ListProducts(context.Context, ListProductsQuery) (int64, []model.Product, error)
 	GetProduct(context.Context, uint64) (*model.Product, error)
 	UpdateProduct(context.Context, uint64, UpdateProductFields) (model.Product, error)
+	UpdateProductStatus(context.Context, uint64, model.ProductStatus) (model.Product, error) // 上架/下架/转草稿
 	DeleteProduct(context.Context, uint64) error
 }
 
@@ -170,6 +171,9 @@ type CouponRepository interface {
 	CreateUserCoupon(context.Context, model.UserCoupon) (model.UserCoupon, error)
 	GetUserCouponByTemplate(context.Context, uint64, uint64) (model.UserCoupon, error)
 	ListUserCoupons(context.Context, uint64) ([]model.UserCoupon, error)
+	// ClaimCouponTx 事务内完成"扣发行量 + 插持有记录"（PRD-009 A4 防超发核心入口）。
+	ClaimCouponTx(context.Context, uint64, uint64, int) (model.UserCoupon, error) // userID, templateID, perUserLimit
+	CountUserCouponsByTemplate(context.Context, uint64, uint64) (int64, error)    // userID, templateID → 已领张数
 }
 
 // ReviewRepository 定义评价模块需要的数据持久化能力。

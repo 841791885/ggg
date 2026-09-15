@@ -57,7 +57,7 @@
 - **学到**：goroutine 生命周期、channel 背压、Outbox 模式
 
 ## A4. 优惠券并发防超发
-- **PRD 依据**：PRD-009 | **难度**：★★☆ | **状态**：未开始
+- **PRD 依据**：PRD-009 | **难度**：★★☆ | **状态**：✅ 已完成（2026-09-12，remaining 条件更新+seq 唯一键双闸门；实测 10 并发抢 3 张发出恰好≤3、同人并发 x5 限 3 张得 seq 精确[1,2,3]无超限）
 - **现状**：Claim 只校验 remaining > 0（读后判），并发下会超发
 - **要做**：领取事务内 `UPDATE coupon_templates SET remaining = remaining - 1 WHERE id = ? AND remaining > 0`；per_user_limit>1 时重新设计 user_coupons 唯一键（当前每人每模板一张）
 - **验收**：并发领 100 张限量券，发出数恰好 100

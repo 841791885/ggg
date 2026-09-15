@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 	"unicode/utf8"
 
@@ -45,6 +46,7 @@ type ListProductsInput struct {
 	Page     int
 	PageSize int
 	Name     string
+	Status   model.ProductStatus // 空值不过滤；消费者入口固定传 on_sale
 }
 
 type CreateSKUInput struct {
@@ -59,6 +61,7 @@ type ListSKUInput struct {
 	Page     int
 	PageSize int
 	Name     string
+	Status   model.SKUStatus // 空值不过滤；公开入口传 active
 }
 
 type UpdateSKUInput struct {
@@ -115,6 +118,7 @@ func (s *ProductService) ListProducts(ctx context.Context, input *ListProductsIn
 	page := 1
 	pageSize := 20
 	name := ""
+	status := model.ProductStatus("") // 空值=不过滤（管理端看全部）；消费者入口固定 on_sale
 
 	if input != nil {
 		page = input.Page
@@ -122,6 +126,7 @@ func (s *ProductService) ListProducts(ctx context.Context, input *ListProductsIn
 			pageSize = input.PageSize
 		}
 		name = strings.TrimSpace(input.Name)
+		status = input.Status
 	}
 
 	zap.S().Debugf("商品列表参数处理完成: page=%d page_size=%d name=%q", page, pageSize, name)
@@ -134,6 +139,7 @@ func (s *ProductService) ListProducts(ctx context.Context, input *ListProductsIn
 		Page:     page,
 		PageSize: pageSize,
 		Name:     name,
+		Status:   status,
 	})
 	if err != nil {
 		zap.S().Errorf("[Service] Repository 查询商品列表失败: %v", err)
@@ -267,6 +273,7 @@ func (s *ProductService) ListSKU(ctx context.Context, productID uint64, input *L
 		return 0, nil, model.ErrInvalidProductID
 	}
 	page, pageSize, name := 1, 20, ""
+	status := model.SKUStatus("") // 空值=不过滤（管理端看全部）；公开入口传 active
 	if input != nil {
 		if input.Page != 0 {
 			page = input.Page
@@ -275,11 +282,12 @@ func (s *ProductService) ListSKU(ctx context.Context, productID uint64, input *L
 			pageSize = input.PageSize
 		}
 		name = strings.TrimSpace(input.Name)
+		status = input.Status
 	}
 	if page < 1 || pageSize < 1 || pageSize > 100 {
 		return 0, nil, model.ErrInvalidProductQuery
 	}
-	total, items, err := s.repository.ListSKU(ctx, productID, repositories.ListSKUQuery{Page: page, PageSize: pageSize, Name: name})
+	total, items, err := s.repository.ListSKU(ctx, productID, repositories.ListSKUQuery{Page: page, PageSize: pageSize, Name: name, Status: status})
 	if err != nil {
 		return 0, nil, fmt.Errorf("查询 SKU 列表：%w", err)
 	}
@@ -357,4 +365,33 @@ func (s *ProductService) UpdateSKUStatus(ctx context.Context, productID, skuID u
 		return model.SKU{}, fmt.Errorf("更新 SKU 状态：%w", err)
 	}
 	return sku, nil
+}
+
+// productStatusTransitions 商品状态机：草稿→在售、在售↔下架、任意→草稿。
+// 为什么需要状态机而不是随便 set：草稿商品不该被消费者看见，下架再上架是常规运营动作，
+// 但"下架→在售"必须允许（否则下架成了单向死刑），而"在售→草稿"要禁止（已有消费者看过，
+// 回草稿会造成语义混乱）。规则集中在这里，controller 和 repository 都不许自行判断。
+var productStatusTransitions = map[model.ProductStatus][]model.ProductStatus{
+	model.ProductStatusDraft:   {model.ProductStatusOnSale},
+	model.ProductStatusOnSale:  {model.ProductStatusOffSale, model.ProductStatusDraft},
+	model.ProductStatusOffSale: {model.ProductStatusOnSale},
+}
+
+// UpdateStatus 推进商品销售状态，非法迁移返回 ErrInvalidProductQuery（复用 400 语义）。
+func (s *ProductService) UpdateStatus(ctx context.Context, productID uint64, status model.ProductStatus) (model.Product, error) {
+	if productID == 0 {
+		return model.Product{}, model.ErrInvalidProductID
+	}
+	product, err := s.repository.GetProduct(ctx, productID)
+	if err != nil {
+		return model.Product{}, err
+	}
+	if !slices.Contains(productStatusTransitions[product.Status], status) {
+		return model.Product{}, model.ErrInvalidProductTransition
+	}
+	updated, err := s.repository.UpdateProductStatus(ctx, productID, status)
+	if err != nil {
+		return model.Product{}, fmt.Errorf("更新商品状态：%w", err)
+	}
+	return updated, nil
 }

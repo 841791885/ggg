@@ -13,7 +13,9 @@ import (
 )
 
 // TradeController 负责订单、支付、退款、优惠券、评价、通知和任务的 HTTP 请求。
-// handler 按领域拆分在同包文件中（order_handler.go、payment_handler.go 等），此处只持有依赖。
+// 各领域的请求处理方法按业务拆分在同包文件中（order_controller.go、payment_controller.go 等），
+// 此处只持有依赖与公共工具。命名统一为 *_controller.go：controller 是"HTTP 层"在本项目的唯一叫法，
+// 不再混用 handler（两者同义，混用只会让读代码的人以为存在两种分层）。
 type TradeController struct {
 	orderService        *services.OrderService
 	paymentService      *services.PaymentService
@@ -65,7 +67,7 @@ func parsePageQuery(ctx *gin.Context) (int, int) {
 }
 
 // respondTradeError 把交易域业务错误统一映射为 HTTP 响应。
-// 目的：集中维护"错误 → 状态码"契约，避免每个 handler 重复 switch 造成行为漂移。
+// 目的：集中维护"错误 → 状态码"契约，避免每个 controller 方法重复 switch 造成行为漂移。
 func respondTradeError(ctx *gin.Context, err error, resource string) {
 	switch {
 	case errors.Is(err, model.ErrOrderNotFound), errors.Is(err, model.ErrPaymentNotFound),

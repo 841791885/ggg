@@ -29,7 +29,43 @@ func (s *CartService) GetCart(ctx context.Context, userID uint64) (model.Cart, e
 	if err != nil {
 		return model.Cart{}, fmt.Errorf("查询购物车：%w", err)
 	}
+	// 补齐明细的展示信息（商品名/单价/库存/可购买性）。
+	// 注意这里是"每条明细查一次"的写法，购物车通常就几条，够用；
+	// 与下单预览同款的 N+1 优化见 docs/ADVANCED-TASKS.md A5。
+	for i := range cart.Items {
+		s.fillItemDisplay(ctx, &cart.Items[i])
+	}
 	return cart, nil
+}
+
+// fillItemDisplay 给一条购物车明细填充展示字段。任一环节查不到（商品/SKU 被删）
+// 就标记为不可购买并给出原因——与下单预览的口径完全一致，保证前后端对"能不能买"的判断同源。
+func (s *CartService) fillItemDisplay(ctx context.Context, item *model.CartItem) {
+	sku, err := s.repository.GetSKUByID(ctx, item.SKUID)
+	if err != nil {
+		item.Reason = "SKU 不存在或已删除"
+		return
+	}
+	item.SKUCode = sku.Code
+	item.UnitPriceCent = sku.PriceCent
+	item.Stock = sku.Stock
+	product, err := s.repository.GetProduct(ctx, sku.ProductID)
+	if err != nil {
+		item.Reason = "商品不存在或已删除"
+		return
+	}
+	item.ProductID = product.ID
+	item.ProductName = product.Name
+	switch {
+	case product.Status != model.ProductStatusOnSale:
+		item.Reason = "商品已下架"
+	case sku.Status != model.SKUStatusActive:
+		item.Reason = "SKU 已停用"
+	case item.Quantity > sku.Stock:
+		item.Reason = "库存不足"
+	default:
+		item.Purchasable = true
+	}
 }
 
 type CartService struct{ repository repositories.Repository }

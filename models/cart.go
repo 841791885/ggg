@@ -27,10 +27,20 @@ type CartItem struct {
 	SKUID    uint64 `json:"sku_id" gorm:"column:sku_id;not null;index;uniqueIndex:uk_cart_items_cart_sku"`
 	Quantity int64  `json:"quantity" gorm:"not null;check:chk_cart_items_quantity_positive,quantity > 0"`
 	// Selected 表示该明细是否纳入下单预览；新加入的商品默认选中。
-	Selected  bool           `json:"selected" gorm:"not null;default:true"`
-	CreatedAt time.Time      `json:"created_at"`
-	UpdatedAt time.Time      `json:"updated_at"`
-	DeletedAt gorm.DeletedAt `json:"-" gorm:"index"`
+	Selected bool `json:"selected" gorm:"not null;default:true"`
+	// 以下字段不落库（gorm:"-"），由 CartService 查询后填充给前端展示：
+	// 购物车页需要展示商品名/单价/库存与可购买原因，这些数据属于 SKU/商品表，
+	// 让 service 聚合一次，比前端逐条再查（N+1）高效得多。
+	ProductID     uint64         `json:"product_id" gorm:"-"`
+	ProductName   string         `json:"product_name" gorm:"-"`
+	SKUCode       string         `json:"sku_code" gorm:"-"`
+	UnitPriceCent int64          `json:"price_cent" gorm:"-"`
+	Stock         int64          `json:"stock" gorm:"-"`
+	Purchasable   bool           `json:"purchasable" gorm:"-"`
+	Reason        string         `json:"reason,omitempty" gorm:"-"`
+	CreatedAt     time.Time      `json:"created_at"`
+	UpdatedAt     time.Time      `json:"updated_at"`
+	DeletedAt     gorm.DeletedAt `json:"-" gorm:"index"`
 }
 
 // TableName 显式指定 CartItem 对应的 MySQL 表名。

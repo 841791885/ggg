@@ -39,15 +39,14 @@ func New(
 
 	router.GET("/ping", healthController.Ping)
 	router.GET("/health/ready", healthController.Ready)
-	// 管理平台和 API 由同一个服务提供，因此前端可以直接请求当前域名下的接口。
-	// 静态文件本身不含敏感数据（浏览器里看不到他人数据），访问控制由页面内每个 API 调用的
-	// JWT + 所有权校验保证，因此这里不做认证，避免 <link> 标签无法携带 Authorization 头的问题。
-	router.Static("/admin-ui", "./admin-ui")
-	router.GET("/admin", func(c *gin.Context) {
-		c.Redirect(http.StatusTemporaryRedirect, "/admin-ui/")
-	})
+	// 前端已迁移到独立的 Next 应用（web/ 目录，开发期 :3001），不再由 Go 托管静态页面。
+	// 两者通过 /api/* 通信：开发期由 Next 的 rewrites 代理，部署期由 Nginx 统一入口（PRD-011）。
 	router.POST("/api/v1/auth/register", userController.Register)
 	router.POST("/api/v1/auth/login", userController.Login)
+	// 买家公开目录：仅需登录态（authenticated 组内），不需要运营权限点；仅在售商品可见。
+	// 公开商品目录（仅在售）：管理台"逛商城"页的数据源，登录与否都可浏览；下单等写操作仍在认证组内。
+	router.GET("/api/v1/products", productController.ListPublicProducts)
+	router.GET("/api/v1/products/:product_id/skus", productController.GetPublicSKUs)
 	// 模拟渠道回调：公开端点（渠道无登录态），安全由 HMAC 验签保证。
 	router.POST("/api/v1/payment-callbacks/mock", tradeController.MockPaymentCallback)
 
@@ -79,6 +78,7 @@ func New(
 	authenticated.GET("/payments/:payment_no", middleware.RequirePermission(middleware.PermissionPaymentRead), tradeController.GetMyPayment)
 	authenticated.POST("/order-items/:id/refunds", middleware.RequirePermission(middleware.PermissionRefundApply), tradeController.ApplyRefund)
 	authenticated.GET("/refunds", middleware.RequirePermission(middleware.PermissionRefundRead), tradeController.ListMyRefunds)
+	authenticated.GET("/coupons/templates", middleware.RequirePermission(middleware.PermissionCouponClaim), tradeController.ListPublicCouponTemplates) // 注册在 :template_id 通配之前，避免路由冲突
 	authenticated.POST("/coupons/:template_id/claim", middleware.RequirePermission(middleware.PermissionCouponClaim), tradeController.ClaimCoupon)
 	authenticated.GET("/coupons", middleware.RequirePermission(middleware.PermissionCouponClaim), tradeController.ListMyCoupons)
 	authenticated.POST("/order-items/:id/reviews", middleware.RequirePermission(middleware.PermissionReviewCreate), tradeController.CreateReview)
@@ -93,6 +93,8 @@ func New(
 	admin.GET("/products/:product_id", middleware.RequirePermission(middleware.PermissionProductRead), productController.GetProduct)
 	admin.PATCH("/products/:product_id", middleware.RequirePermission(middleware.PermissionProductUpdate), productController.UpdateProduct)
 	admin.DELETE("/products/:product_id", middleware.RequirePermission(middleware.PermissionProductDelete), productController.DeleteProduct)
+	// 上架/下架：销售状态推进，独立于字段更新（草稿↔在售下架，状态机在 service 层）。
+	admin.PATCH("/products/:product_id/status", middleware.RequirePermission(middleware.PermissionProductUpdate), productController.UpdateProductStatus)
 
 	admin.POST("/products/:product_id/skus", middleware.RequirePermission(middleware.PermissionSKUCreate), productController.CreateSKU)
 	admin.GET("/products/:product_id/skus/:sku_id", middleware.RequirePermission(middleware.PermissionSKURead), productController.GetSKU)
@@ -118,7 +120,7 @@ func New(
 	admin.POST("/tasks/:id/retry", middleware.RequirePermission(middleware.PermissionTaskRetry), tradeController.AdminRetryTask)
 
 	// 商品公开评价列表不要求 JWT：游客也应能查看口碑，与商品目录的公开语义一致。
-	router.GET("/api/v1/products/:id/reviews", tradeController.ListProductReviews)
+	router.GET("/api/v1/products/:product_id/reviews", tradeController.ListProductReviews) // 参数名与同前缀路由保持一致（Gin 要求）
 
 	return router, nil
 }

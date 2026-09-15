@@ -11,6 +11,8 @@ var (
 	ErrInvalidProductQuery = errors.New("page 必须大于等于 1，page_size 必须在 1 到 100 之间")
 	// ErrProductNotFound 表示指定商品不存在。
 	ErrProductNotFound = errors.New("商品不存在")
+	// ErrInvalidProductTransition 表示商品状态迁移不合法（如草稿重复上架、在售回退草稿）。
+	ErrInvalidProductTransition = errors.New("商品当前状态不允许该操作")
 	// ErrProductOnSale 表示在售商品不能直接删除。
 	ErrProductOnSale = errors.New("在售商品不能删除")
 	// ErrEmptyProductUpdate 表示修改商品时没有提供任何可修改字段。

@@ -137,16 +137,22 @@ func newCouponTemplateResponse(template *model.CouponTemplate) CouponTemplateRes
 
 // UserCouponResponse 表示用户持有券的对外响应结构。
 type UserCouponResponse struct {
-	ID         uint64                 `json:"id"`
-	TemplateID uint64                 `json:"template_id"`
-	Status     model.UserCouponStatus `json:"status"`
-	ClaimedAt  time.Time              `json:"claimed_at"`
-	UsedAt     *time.Time             `json:"used_at"`
+	ID            uint64                 `json:"id"`
+	TemplateID    uint64                 `json:"template_id"`
+	Seq           int                    `json:"seq"` // 该用户在此模板下的第几张（A4 引入，UI 展示"第 N 张"）
+	TemplateName  string                 `json:"template_name"`
+	ThresholdCent int64                  `json:"threshold_cent"`
+	DiscountCent  int64                  `json:"discount_cent"`
+	Status        model.UserCouponStatus `json:"status"`
+	ClaimedAt     time.Time              `json:"claimed_at"`
+	UsedAt        *time.Time             `json:"used_at"`
 }
 
 // newUserCouponResponse 将用户优惠券模型转换为对外响应结构。
 func newUserCouponResponse(coupon *model.UserCoupon) UserCouponResponse {
-	return UserCouponResponse{ID: coupon.ID, TemplateID: coupon.TemplateID, Status: coupon.Status, ClaimedAt: coupon.ClaimedAt, UsedAt: coupon.UsedAt}
+	return UserCouponResponse{ID: coupon.ID, TemplateID: coupon.TemplateID, Seq: coupon.Seq,
+		TemplateName: coupon.TemplateName, ThresholdCent: coupon.ThresholdCent, DiscountCent: coupon.DiscountCent,
+		Status: coupon.Status, ClaimedAt: coupon.ClaimedAt, UsedAt: coupon.UsedAt}
 }
 
 // ReviewResponse 表示评价的对外响应结构。

@@ -75,7 +75,7 @@ func (s *PaymentService) GetByPaymentNo(ctx context.Context, userID uint64, paym
 // 顺序即安全边界：①验签（挡伪造）→ ②报文与支付单交叉校验（挡篡改/张冠李戴）→ ③事务内幂等消费。
 // 任何一步失败都不会产生业务效果；重复回调在第三步收敛为"确认成功但零副作用"。
 func (s *PaymentService) HandleCallback(ctx context.Context, callback MockPaymentCallback) (model.Payment, error) {
-	// ① 先验签再解析信任：签名不对连业务都不看（PRD-007 核心规则第4条）。
+	// ① 先验签再解析信任：签名不对连业务都不看（PRD-007 核心规则第 4 条）。
 	if !VerifyMockCallbackSignature(s.callbackSecret, callback) {
 		return model.Payment{}, model.ErrInvalidCallbackSignature
 	}

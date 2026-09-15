@@ -23,6 +23,11 @@ type ListProductsQuery struct {
 	Name     *string `form:"name"`
 }
 
+// UpdateProductStatusRequest 表示修改商品销售状态的请求体。
+type UpdateProductStatusRequest struct {
+	Status model.ProductStatus `json:"status"`
+}
+
 type CreateSKURequest struct {
 	Code      string            `json:"code"`
 	Specs     map[string]string `json:"specs"`

@@ -19,6 +19,7 @@ type productService interface {
 	GetProduct(ctx context.Context, productID uint64) (*model.Product, error)
 	UpdateProduct(ctx context.Context, productID uint64, input services.UpdateProductInput) (model.Product, error)
 	DeleteProduct(ctx context.Context, productID uint64) error
+	UpdateStatus(ctx context.Context, productID uint64, status model.ProductStatus) (model.Product, error)
 
 	CreateSKU(ctx context.Context, input services.CreateSKUInput) (model.SKU, error)
 	GetSKU(ctx context.Context, productID, skuID uint64) (model.SKU, error)
@@ -405,4 +406,106 @@ func (p *ProductController) UpdateSKUStatus(c *gin.Context) {
 		return
 	}
 	respondSuccess(c, http.StatusOK, newSKUResponse(&sku))
+}
+
+// ListPublicProducts 处理 GET /api/v1/products —— 消费者"逛商城"入口。
+// 与运营列表的唯一差异：强制 status=on_sale（PRD-001 规则"只有上架商品可被消费者查询"），
+// 不接受客户端传 status 参数——过滤条件绝不能交给调用方，这是服务端说了算的边界。
+func (p *ProductController) ListPublicProducts(c *gin.Context) {
+	var query ListProductsQuery
+	if err := c.ShouldBindQuery(&query); err != nil {
+		respondError(c, http.StatusBadRequest, "查询参数格式不正确")
+		return
+	}
+	input := &services.ListProductsInput{Status: model.ProductStatusOnSale}
+	if query.Page != nil {
+		input.Page = *query.Page
+	}
+	if query.PageSize != nil {
+		input.PageSize = *query.PageSize
+	}
+	if query.Name != nil {
+		input.Name = *query.Name
+	}
+	total, products, err := p.service.ListProducts(c.Request.Context(), input)
+	if err != nil {
+		if errors.Is(err, model.ErrInvalidProductQuery) {
+			respondError(c, http.StatusBadRequest, err.Error())
+			return
+		}
+		zap.S().Errorf("查询在售商品失败: %v", err)
+		respondError(c, http.StatusInternalServerError, "服务器内部错误")
+		return
+	}
+	response := make([]ProductResponse, len(products))
+	for i := range products {
+		response[i] = newProductResponse(&products[i])
+	}
+	respondSuccess(c, http.StatusOK, gin.H{"total": total, "list": response})
+}
+
+// GetPublicSKUPage 处理 GET /api/v1/products/:product_id/skus —— 商城页按商品展开规格。
+// 简化策略（学习项目）：返回该商品全部 SKU，仅 active 且所属商品在售；
+// 商品下架时整卡不可见由列表接口的 on_sale 过滤天然保证（进不来这个 id 的合法页面）。
+func (p *ProductController) GetPublicSKUs(c *gin.Context) {
+	productID, err := strconv.ParseUint(c.Param("product_id"), 10, 64)
+	if err != nil || productID == 0 {
+		respondError(c, http.StatusBadRequest, "product_id 必须是大于 0 的整数")
+		return
+	}
+	product, err := p.service.GetProduct(c.Request.Context(), productID)
+	if err != nil {
+		if errors.Is(err, model.ErrProductNotFound) {
+			respondError(c, http.StatusNotFound, "资源不存在")
+			return
+		}
+		respondError(c, http.StatusInternalServerError, "服务器内部错误")
+		return
+	}
+	if product.Status != model.ProductStatusOnSale {
+		respondError(c, http.StatusNotFound, "资源不存在") // 未上架商品对消费者按不存在处理
+		return
+	}
+	// 状态过滤下沉到查询层（SQL WHERE status=active），controller 不再内存二次过滤。
+	total, skus, err := p.service.ListSKU(c.Request.Context(), productID, &services.ListSKUInput{Page: 1, PageSize: 100, Status: model.SKUStatusActive})
+	if err != nil {
+		zap.S().Errorf("查询商品规格失败: %v", err)
+		respondError(c, http.StatusInternalServerError, "服务器内部错误")
+		return
+	}
+	response := make([]SKUResponse, len(skus))
+	for i := range skus {
+		response[i] = newSKUResponse(&skus[i])
+	}
+	respondSuccess(c, http.StatusOK, gin.H{"total": total, "list": response})
+}
+
+// UpdateProductStatus 处理 PATCH /api/v1/admin/products/:product_id/status。
+// 请求体只带 status；合法性（状态机）由 service 判断，controller 不重复规则。
+func (p *ProductController) UpdateProductStatus(c *gin.Context) {
+	productID, err := strconv.ParseUint(c.Param("product_id"), 10, 64)
+	if err != nil || productID == 0 {
+		respondError(c, http.StatusBadRequest, "product_id 必须是大于 0 的整数")
+		return
+	}
+	var request UpdateProductStatusRequest
+	if err := c.ShouldBindJSON(&request); err != nil {
+		respondError(c, http.StatusBadRequest, "请求 JSON 格式不正确")
+		return
+	}
+	product, err := p.service.UpdateStatus(c.Request.Context(), productID, request.Status)
+	if err != nil {
+		if errors.Is(err, model.ErrInvalidProductTransition) {
+			respondError(c, http.StatusConflict, err.Error())
+			return
+		}
+		if errors.Is(err, model.ErrProductNotFound) {
+			respondError(c, http.StatusNotFound, err.Error())
+			return
+		}
+		zap.S().Errorf("更新商品状态失败: product_id=%d err=%v", productID, err)
+		respondError(c, http.StatusInternalServerError, "服务器内部错误")
+		return
+	}
+	respondSuccess(c, http.StatusOK, newProductResponse(&product))
 }

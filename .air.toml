@@ -1,0 +1,35 @@
+# air 热重载配置 —— 改完 .go 文件自动重编译并重启服务（PRD 学习期提效工具）
+#
+# 用法：项目根目录执行 `air`，之后改后端代码保存即自动生效。
+# 前端（admin-ui/*）不需要重启：router.Static 每次请求都读磁盘，浏览器刷新即可。
+
+root = "."
+tmp_dir = "tmp"                      # 编译产物与日志的落盘目录，已在 .gitignore 里排除
+
+[build]
+  # 编译命令：输出到 tmp/ 下，避免和 go build 的默认产物混淆。
+  cmd = "go build -o ./tmp/main ."
+  bin = "./tmp/main"
+  # 只监听这些扩展名的变化——关键收益：改 admin-ui/*.js / *.css 时不会触发后端重编译。
+  include_ext = ["go", "yaml"]
+  # 排除目录：前端静态资源、编译产物、迁移/文档类的非代码内容。
+  exclude_dir = ["tmp", "admin-ui", "docs", "http", "migrations", "node_modules", ".git", "data"]
+  exclude_regex = ["_test\\.go$", "^data/"] # 测试文件不触发重启；data/ 是 MySQL 数据卷，watch 会报错
+  # 编译失败时保留旧进程继续跑——比直接杀进程友好，改错了还能用着上一版调试。
+  kill_delay = "1s"
+  # 优雅停机的窗口：比 main.go 里 server.shutdown_timeout(10s) 略长，
+  # 让 worker 有时间收尾（见 A3 的 WaitGroup.Wait）。
+  send_interrupt = true
+  stop_on_error = false               # 编译错误不退出 air，修好自动重试
+
+[log]
+  # 把 air 自身的构建日志和程序日志合并输出到同一个终端，方便对照时间线。
+  time = true
+  main_only = false
+
+[misc]
+  # air 启动时先清屏，每次重启后你看到的是"当前这次运行"的完整输出。
+  clean_on_exit = true
+
+[screen]
+  clear_on_rebuild = false            # 重启时不清屏：翻滚的历史日志对排查闪退有用

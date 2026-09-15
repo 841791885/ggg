@@ -92,7 +92,16 @@ func (s *OrderService) buildPreviewRow(ctx context.Context, item *model.CartItem
 		}
 		return row, fmt.Errorf("查询 SKU：%w", err)
 	}
+	// ⚠️ GetProduct 返回 *model.Product：not found 时是 (nil, ErrProductNotFound)，
+	// 指针接收者调方法不 panic、解引用字段才 panic——所以必须先判错再取 Name。
 	product, err := s.repository.GetProduct(ctx, sku.ProductID)
+	if err != nil {
+		if isModelNotFound(err) {
+			row.Reason = "商品不存在或已删除"
+			return row, nil // 与 SKU 同款处理：标记不可购买而非中断整个预览
+		}
+		return row, fmt.Errorf("查询商品：%w", err)
+	}
 	row.ProductName = product.Name
 	row.SKUCode = sku.Code
 	row.UnitPriceCent = sku.PriceCent
