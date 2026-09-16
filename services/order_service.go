@@ -52,8 +52,58 @@ func NewOrderService(repository repositories.Repository) *OrderService {
 	return &OrderService{repository: repository}
 }
 
-// Preview 重新读取选中购物车项的实时价格与库存，生成下单预览；不锁库存、不固定价格。
+// Preview 生成"下单预览"：把购物车里勾选的商品，按【此刻】的真实价格与库存重算一遍。
+//
+// ── 它是干什么的（一句话）──
+// 用户在结算页看到的那个清单：每件商品多少钱、能不能买、一共多少 —— 全部由这里算出来，
+// 前端传来的任何金额都不作数（防篡改的第一道闸门）。
+//
+// ── 前端类比 ──
+// 相当于服务端的 "computed 属性"：输入是购物车（可能已过期），输出是一份【当下有效】的结算清单。
+// 前端当然也能算，但那份计算基于可能过期的数据，且用户能改 —— 所以真算必须在这里做。
+//
+// ── 关键设计：它"不确定"任何东西 ──
+// 预览展示的库存和价格，到你真正下单那一刻可能已经变了（别人抢走了最后一件）。
+// 所以它返回的是"此刻看起来能买"，不是承诺。真正的一致性由 Create 里的事务扣减保证：
+// 预览 → 下单之间只要有变化，下单就会因库存不足而失败并提示用户。
+// ⚠️ 这条"预览不锁资源"的边界很重要：如果这里锁库存，用户打开结算页就会占用库存，
+//
+//	而多数人看完就走了，库存会被白白占死。
+//
+// 关于 err 的处理：单条明细查询失败（数据库抖动）会中断整个预览（fail fast）；
+// 而"商品下架/库存不足"这类业务态不算 error，会被标记进 row.Reason 照常返回。
+// ⚠️ 版本说明：这是【逐条查询版】（N+1），与下方 BatchPreview【批量版】并存对比。
+// 每条明细各查一次 SKU + 商品，10 条明细 = 21 次数据库往返。保留用于学习对照。
 func (s *OrderService) Preview(ctx context.Context, userID uint64) (CartPreview, error) {
+	// 实现已切换为批量查询版（A5）：N+1 → 固定 3 次查询，对外行为完全不变。
+	// 保留单一入口而非让调用方直接调 BatchPreview，是为了让"预览"只有一条生产路径——
+	// 下单（Create）与展示（API）调同一个函数，杜绝两套算法漂移。
+	//
+	// 📚 学习对照：下方 buildPreviewRow 是重构前的逐条查询实现（N+1 版），
+	// 已不再被调用，保留用于对比理解"批量化 + 索引化"带来的差异。
+	return s.BatchPreview(ctx, userID)
+}
+
+// BatchPreview 是下单预览的正式实现（A5 重构后由 Preview 统一委托调用）。\n// 核心价值：把 N+1 次查询压成 3 次（读购物车 + 批量查 SKU + 批量查商品）。
+//
+// ─ 什么是 N+1，这里怎么消除的 ──
+// 重构前：对每条明细单独查 1 次 SKU + 1 次商品（已删除的逐条实现）：
+//
+//	10 条明细 = 1(读购物车) + 10(查 SKU) + 10(查商品) = 21 次数据库往返 ❌
+//
+// 本版本改成"先收集 id，再批量查"：
+//
+//	10 条明细 = 1(读购物车) + 1(批量查 SKU) + 1(批量查商品) = 3 次 ✅
+//
+// 数据库往返是慢操作（网络 + 解析 + 连接开销），条数越多差距越大。
+//
+// ─ 内存组装：为什么先转成 map ──
+// IN 查询返回的是切片，要按 sku_id 找到对应 SKU 得每次遍历一遍（O(n²)）。
+// 先建成 map[id] 对象，查一条就是 O(1)——这是"批量查询"的标准后半段：
+// 查询批量化 + 索引内存化，两者缺一不可。
+// ✅ 版本说明：这是【批量查询版】（A5 成果），10 条明细只需 3 次数据库往返。
+// 与上方 Preview（逐条版）行为完全一致，差异仅在查询次数。
+func (s *OrderService) BatchPreview(ctx context.Context, userID uint64) (CartPreview, error) {
 	if userID == 0 {
 		return CartPreview{}, model.ErrInvalidUserID
 	}
@@ -61,25 +111,94 @@ func (s *OrderService) Preview(ctx context.Context, userID uint64) (CartPreview,
 	if err != nil {
 		return CartPreview{}, fmt.Errorf("查询购物车：%w", err)
 	}
-	preview := CartPreview{Items: []CartPreviewItem{}}
+
+	// ── 第一步：只挑勾选项，收集需要查询的 ID ──
+	// 注意这里不查商品：SKU 表里已经有 product_id，查回 SKU 后再收集商品 id 即可，
+	// 比依赖 cartItem.ProductID 可靠（后者是展示字段，可能没填充）。
+	selected := make([]*model.CartItem, 0, len(cart.Items))
+	skuIDs := make([]uint64, 0, len(cart.Items))
 	for i := range cart.Items {
 		item := &cart.Items[i]
 		if !item.Selected {
-			continue // 未选中的明细不参与预览
+			continue
 		}
-		row, err := s.buildPreviewRow(ctx, item)
-		if err != nil {
-			return CartPreview{}, err
+		selected = append(selected, item)
+		skuIDs = append(skuIDs, item.SKUID)
+	}
+	if len(selected) == 0 {
+		return CartPreview{Items: []CartPreviewItem{}}, nil // 没有勾选项：直接返回空预览
+	}
+
+	// ─ 第二步：一次查回所有 SKU（1 次往返）──
+	skus, err := s.repository.GetSKUByIDs(ctx, skuIDs)
+	if err != nil {
+		return CartPreview{}, fmt.Errorf("批量查询 SKU：%w", err)
+	}
+	skuByID := make(map[uint64]model.SKU, len(skus))
+	productIDs := make([]uint64, 0, len(skus))
+	for _, sku := range skus {
+		skuByID[sku.ID] = sku
+		productIDs = append(productIDs, sku.ProductID) // 商品 id 从 SKU 里取，来源唯一
+	}
+
+	// ─ 第三步：一次查回所有商品（1 次往返）──
+	products, err := s.repository.GetProductByIDs(ctx, productIDs)
+	if err != nil {
+		return CartPreview{}, fmt.Errorf("批量查询商品：%w", err)
+	}
+	productByID := make(map[uint64]model.Product, len(products))
+	for _, product := range products {
+		productByID[product.ID] = product
+	}
+
+	// ── 第四步：纯内存组装，零数据库调用 ──
+	// 判断口径：商品下架 / SKU 停用 / 库存不足 —— 与购物车页 fillItemDisplay 完全一致，
+	// 保证"购物车里的灰项"和"预览里被剔除的项"永远是同一批。
+	preview := CartPreview{Items: make([]CartPreviewItem, 0, len(selected))}
+	for _, item := range selected {
+		row := CartPreviewItem{ItemID: item.ID, SKUID: item.SKUID, Quantity: item.Quantity}
+
+		// 用 `sku, ok :=` 双返回值判断"map 里有没有"——IN 查询查不到的 id 不会出现在结果里，
+		// 这正是"缺失项"要显式处理的地方（原版是靠 error 判断，这里靠 ok）。
+		sku, ok := skuByID[item.SKUID]
+		if !ok {
+			row.Reason = "SKU 不存在或已删除"
+			preview.Items = append(preview.Items, row)
+			continue
 		}
-		preview.Items = append(preview.Items, row)
-		if row.Purchasable {
-			preview.TotalCent += row.SubtotalCent
+		product, ok := productByID[sku.ProductID]
+		if !ok {
+			row.Reason = "商品不存在或已删除"
+			preview.Items = append(preview.Items, row)
+			continue
+		}
+
+		row.ProductName = product.Name
+		row.SKUCode = sku.Code
+		row.UnitPriceCent = sku.PriceCent
+		row.SubtotalCent = sku.PriceCent * item.Quantity
+		row.Stock = sku.Stock
+		switch {
+		case product.Status != model.ProductStatusOnSale:
+			row.Reason = "商品已下架"
+		case sku.Status != model.SKUStatusActive:
+			row.Reason = "SKU 已停用"
+		case item.Quantity > sku.Stock:
+			row.Reason = "库存不足"
+		default:
+			row.Purchasable = true
+			preview.TotalCent += row.SubtotalCent // 只有可购项计入总额，与 Preview 口径一致
 			preview.PurchasableCount++
 		}
+		preview.Items = append(preview.Items, row)
 	}
 	return preview, nil
 }
 
+// ─────────────────────────────────────────────────────────────
+// 以下 buildPreviewRow 属于【逐条查询版】Preview，与 BatchPreview（批量版）并存，
+// 用于对比学习 N+1 问题。生产路径应使用批量版；此版本保留作教学对照。
+// ─────────────────────────────────────────────────────────────
 // buildPreviewRow 逐条读取 SKU 与商品状态，标记可购买性和不可购买原因。
 // TODO(PRD-004 进阶): 当前每条明细一次查询存在 N+1，应改为收集 sku_id 后批量 IN 查询（见 docs/ADVANCED-TASKS.md A5）。
 func (s *OrderService) buildPreviewRow(ctx context.Context, item *model.CartItem) (CartPreviewItem, error) {

@@ -71,6 +71,7 @@ type ProductRepository interface {
 	CreateProduct(context.Context, model.Product) (model.Product, error)
 	ListProducts(context.Context, ListProductsQuery) (int64, []model.Product, error)
 	GetProduct(context.Context, uint64) (*model.Product, error)
+	GetProductByIDs(context.Context, []uint64) ([]model.Product, error)
 	UpdateProduct(context.Context, uint64, UpdateProductFields) (model.Product, error)
 	UpdateProductStatus(context.Context, uint64, model.ProductStatus) (model.Product, error) // 上架/下架/转草稿
 	DeleteProduct(context.Context, uint64) error
@@ -81,6 +82,7 @@ type SKURepository interface {
 	CreateSKU(context.Context, model.SKU) (model.SKU, error)
 	GetSKU(context.Context, uint64, uint64) (model.SKU, error)
 	GetSKUByID(context.Context, uint64) (model.SKU, error)
+	GetSKUByIDs(context.Context, []uint64) ([]model.SKU, error)
 	ListSKU(context.Context, uint64, ListSKUQuery) (int64, []model.SKU, error)
 	UpdateSKU(context.Context, uint64, uint64, UpdateSKUFields) (model.SKU, error)
 	DeleteSKU(context.Context, uint64, uint64) error
