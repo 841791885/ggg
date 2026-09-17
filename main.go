@@ -83,7 +83,7 @@ func main() {
 	workerCtx, stopWorker := context.WithCancel(context.Background())
 	var workerDone sync.WaitGroup
 	if appConfig.Worker.Enabled {
-		worker := services.NewWorkerService(dbRepository, appConfig.Worker.ScanInterval.Value())
+		worker := services.NewWorkerService(dbRepository, dbRepository, appConfig.Worker.ScanInterval.Value())
 		// WaitGroup.Go（Go 1.25+）= Add(1)+go func(){defer Done(); f()}() 的官方封装，
 		// 少写三行、杜绝"忘了 Add/Done 配对"这类经典并发 bug。
 		workerDone.Go(func() { worker.Start(workerCtx) })

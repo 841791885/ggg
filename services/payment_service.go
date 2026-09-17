@@ -12,12 +12,12 @@ import (
 // PaymentService 负责支付单创建、查询与渠道回调消费。
 // 金额完全由订单生成（PRD-007 核心规则）。
 type PaymentService struct {
-	repository     repositories.Repository
+	repository     repositories.PaymentStore
 	callbackSecret string // HMAC 验签密钥，启动时从配置注入
 }
 
 // NewPaymentService 创建支付业务服务。
-func NewPaymentService(repository repositories.Repository, callbackSecret string) *PaymentService {
+func NewPaymentService(repository repositories.PaymentStore, callbackSecret string) *PaymentService {
 	return &PaymentService{repository: repository, callbackSecret: callbackSecret}
 }
 

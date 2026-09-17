@@ -21,7 +21,7 @@ type ConsumeCallbackInput struct {
 // TaskContext 随任务一起传给 handler：任务本体 + 仓库句柄（handler 需要跨模块读写订单/通知）。
 type TaskContext struct {
 	Task       model.BackgroundTask
-	Repository Repository
+	Repository TaskHandlerStore // 刻意小于全量 Repository：handler 能用哪些域由这里声明
 }
 
 // ListOrdersQuery 是订单列表查询条件；Admin=true 时忽略 UserID 查全量。
@@ -222,4 +222,61 @@ type Repository interface {
 	NotificationRepository
 	TaskRepository
 	UserRepository
+}
+
+/* ═══════════════ Service 专用窄接口 ═══════════════
+ * 每个 service 只声明它真正需要的那几个领域接口。收益：
+ *   · 编译期挡住越权调用（cartService 拿不到 CancelOrder）
+ *   · 读代码时一眼看出"这个 service 依赖哪些数据域"
+ * Go 接口是隐式实现的，注入时仍传同一个 MySQLRepository，零行为变化。
+ */
+
+// ProductStore 是商品服务的数据依赖：商品与 SKU 两个域。
+type ProductStore interface {
+	ProductRepository
+	SKURepository
+}
+
+// CartStore 是购物车服务的数据依赖：读写购物车外还需查 SKU/商品做库存与上下架校验。
+type CartStore interface {
+	CartRepository
+	SKURepository
+	ProductRepository
+}
+
+// OrderStore 是订单服务的数据依赖：下单要跨地址、购物车、商品/SKU（预览与扣库存）。
+type OrderStore interface {
+	OrderRepository
+	AddressRepository
+	CartRepository
+	SKURepository
+	ProductRepository
+}
+
+// PaymentStore 是支付服务的数据依赖：回调推进订单状态，需读订单。
+type PaymentStore interface {
+	PaymentRepository
+	OrderRepository
+}
+
+// ReviewStore 是评价服务的数据依赖：评价必须绑定真实订单项，
+// 故还需退款域的"按用户取订单项+订单"能力（该查询本就归属订单项校验职责）。
+type ReviewStore interface {
+	ReviewRepository
+	SKURepository
+	RefundRepository
+}
+
+// WorkerStore 是 worker 主循环的数据依赖：只做"领任务 + 回写状态"，不越界。
+type WorkerStore interface {
+	TaskRepository
+}
+
+// TaskHandlerStore 是【任务处理器】的数据依赖：handler 天生要跨模块干活
+// （超时关单要改订单、发通知要写站内信），所以它比 WorkerStore 宽。
+// 单独命名而非复用胖 Repository，是为了让"handler 能碰哪些域"这件事显式可见——
+// 新增 handler 时若用到清单外的能力，编译器会提醒你先来此处登记。
+type TaskHandlerStore interface {
+	OrderRepository        // CancelOrderBySystem：超时关单并释放库存
+	NotificationRepository // CreateNotification / HasNotificationLike：站内信投递与判重
 }

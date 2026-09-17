@@ -68,10 +68,10 @@ func (s *CartService) fillItemDisplay(ctx context.Context, item *model.CartItem)
 	}
 }
 
-type CartService struct{ repository repositories.Repository }
+type CartService struct{ repository repositories.CartStore }
 
 // NewCartService 创建购物车业务服务。
-func NewCartService(repository repositories.Repository) *CartService {
+func NewCartService(repository repositories.CartStore) *CartService {
 	return &CartService{repository: repository}
 }
 

@@ -10,10 +10,10 @@ import (
 
 // ReviewService 负责评价写入、展示和运营显隐管理。
 // 规则：评价必须绑定真实已完成订单项，一人一项一条；隐藏保留原始内容和操作记录用于审计。
-type ReviewService struct{ repository repositories.Repository }
+type ReviewService struct{ repository repositories.ReviewStore }
 
 // NewReviewService 创建评价业务服务。
-func NewReviewService(repository repositories.Repository) *ReviewService {
+func NewReviewService(repository repositories.ReviewStore) *ReviewService {
 	return &ReviewService{repository: repository}
 }
 

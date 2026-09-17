@@ -75,11 +75,11 @@ type UpdateSKUInput struct {
 //
 // Service 只依赖 Repository 接口，不关心底层是 MySQL、内存还是测试替身。
 type ProductService struct {
-	repository repositories.Repository
+	repository repositories.ProductStore
 }
 
 // NewProductService 创建商品业务服务。
-func NewProductService(repository repositories.Repository) *ProductService {
+func NewProductService(repository repositories.ProductStore) *ProductService {
 	return &ProductService{repository: repository}
 }
 

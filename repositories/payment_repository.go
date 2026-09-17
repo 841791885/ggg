@@ -239,3 +239,7 @@ func extraWithStatus(status model.PaymentStatus, extra map[string]any) map[strin
 	updates["status"] = status
 	return updates
 }
+
+// 编译期检查：本文件负责的领域接口是否都实现了。
+// 少写方法时错误直接指向这里，而不是 mysql_repository.go 里的全量断言。
+var _ PaymentRepository = (*MySQLRepository)(nil)

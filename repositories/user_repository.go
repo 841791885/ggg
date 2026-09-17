@@ -58,3 +58,7 @@ func (r *MySQLRepository) CreateUser(ctx context.Context, user model.User) (mode
 	}
 	return user, nil
 }
+
+// 编译期检查：本文件负责的领域接口是否都实现了。
+// 少写方法时错误直接指向这里，而不是 mysql_repository.go 里的全量断言。
+var _ UserRepository = (*MySQLRepository)(nil)

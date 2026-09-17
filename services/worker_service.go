@@ -18,16 +18,20 @@ import (
 // Go 的 worker 是真·并行操作系统线程的 goroutine，拥有独立生命周期——
 // 因此必须显式约定"怎么停"（ctx 取消）和"停之前等谁干完"（WaitGroup），这就是本文件的全部主题。
 type WorkerService struct {
-	repository repositories.Repository
-	interval   time.Duration // 扫描间隔
+	repository repositories.WorkerStore      // 主循环专用：只有任务表能力
+	handlers_  repositories.TaskHandlerStore // 交给 handler 的跨模块能力（同一实例，类型不同）
+	interval   time.Duration                 // 扫描间隔
 	handlers   map[string]func(context.Context, repositories.TaskContext) error
 }
 
 // NewWorkerService 创建 worker 并注册任务处理器表。
 // handler 按 task_type 分发——新增异步业务（如退款到账通知）只需往表里加一项，主循环零改动。
-func NewWorkerService(repository repositories.Repository, interval time.Duration) *WorkerService {
+// NewWorkerService 创建 worker。两个接口参数实际传入同一个 MySQLRepository 实例，
+// 分开声明是为了让编译器区分"主循环能做什么"与"handler 能做什么"。
+func NewWorkerService(repository repositories.WorkerStore, handlerStore repositories.TaskHandlerStore, interval time.Duration) *WorkerService {
 	w := &WorkerService{
 		repository: repository,
+		handlers_:  handlerStore,
 		interval:   interval,
 		handlers:   map[string]func(context.Context, repositories.TaskContext) error{},
 	}
@@ -114,7 +118,7 @@ func (w *WorkerService) runOnce(ctx context.Context) {
 			continue
 		}
 		// 执行业务。传 TaskContext（任务 + 仓库句柄），handler 借此能跨模块读写订单、通知。
-		err = handler(ctx, repositories.TaskContext{Task: task, Repository: w.repository})
+		err = handler(ctx, repositories.TaskContext{Task: task, Repository: w.handlers_})
 		if err == nil {
 			if markErr := w.repository.MarkTaskSucceeded(ctx, task.ID); markErr != nil {
 				// 业务成功了但状态没记上——只告警不回滚（业务效果已落库，回滚反而制造不一致）。
