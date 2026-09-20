@@ -196,6 +196,14 @@ type NotificationRepository interface {
 	HasNotificationLike(context.Context, uint64, string, string) (bool, error) // worker 通知幂等判重：user+type+title
 }
 
+// ShipmentRepository 定义发货记录的数据持久化能力（PRD-009 A7）。
+type ShipmentRepository interface {
+	CreateShipment(context.Context, model.Shipment) (model.Shipment, error)           // 撞唯一键翻译为 ErrShipmentDuplicate（幂等信号）
+	GetShipmentByOrderAndKey(context.Context, uint64, string) (model.Shipment, error) // orderID, shippingKey → 幂等查询
+	ListShipmentsByOrder(context.Context, uint64) ([]model.Shipment, error)           // 买家看物流 / 运营核对
+	ShipOrderTx(context.Context, uint64, uint64, model.Shipment) (model.Order, error) // orderID, operatorID → 事务内改状态+插记录+写日志
+}
+
 // TaskRepository 定义后台任务模块需要的数据持久化能力。
 type TaskRepository interface {
 	CreateTask(context.Context, model.BackgroundTask) (model.BackgroundTask, error)
@@ -222,6 +230,7 @@ type Repository interface {
 	NotificationRepository
 	TaskRepository
 	UserRepository
+	ShipmentRepository
 }
 
 /* ═══════════════ Service 专用窄接口 ═══════════════
@@ -244,13 +253,15 @@ type CartStore interface {
 	ProductRepository
 }
 
-// OrderStore 是订单服务的数据依赖：下单要跨地址、购物车、商品/SKU（预览与扣库存）。
+// OrderStore 是订单服务的数据依赖：下单要跨地址、购物车、商品/SKU（预览与扣库存），
+// 发货要写 shipments（A7 幂等发货）。
 type OrderStore interface {
 	OrderRepository
 	AddressRepository
 	CartRepository
 	SKURepository
 	ProductRepository
+	ShipmentRepository
 }
 
 // PaymentStore 是支付服务的数据依赖：回调推进订单状态，需读订单。

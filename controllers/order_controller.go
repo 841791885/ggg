@@ -153,7 +153,15 @@ func (c *TradeController) AdminShipOrder(ctx *gin.Context) {
 	if !ok {
 		return
 	}
-	order, err := c.orderService.Ship(ctx.Request.Context(), operatorID, orderID)
+	var request ShipOrderRequest
+	if err := ctx.ShouldBindJSON(&request); err != nil {
+		respondError(ctx, http.StatusBadRequest, "请求 JSON 格式不正确")
+		return
+	}
+	order, err := c.orderService.Ship(ctx.Request.Context(), services.ShipInput{
+		OperatorID: operatorID, OrderID: orderID,
+		ShippingKey: request.ShippingKey, Carrier: request.Carrier, TrackingNo: request.TrackingNo,
+	})
 	if err != nil {
 		respondTradeError(ctx, err, "发货")
 		return

@@ -79,8 +79,8 @@ func respondTradeError(ctx *gin.Context, err error, resource string) {
 	case errors.Is(err, model.ErrInvalidIdempotencyKey), errors.Is(err, model.ErrEmptyCartSelection),
 		errors.Is(err, model.ErrInvalidRefundAmount), errors.Is(err, model.ErrInvalidCouponInput),
 		errors.Is(err, model.ErrInvalidUserID), errors.Is(err, model.ErrInvalidCallbackSignature),
-		errors.Is(err, model.ErrCallbackAmountMismatch):
-		// 400：报文本身有问题（签名伪造、金额对不上）——调用方（渠道模拟器）应修正后重新发起。
+		errors.Is(err, model.ErrCallbackAmountMismatch), errors.Is(err, model.ErrInvalidShippingKey):
+		// 400：报文本身有问题（签名伪造、金额对不上、发货参数不齐）——调用方修正后重新发起。
 		respondError(ctx, http.StatusBadRequest, err.Error())
 	case errors.Is(err, model.ErrIdempotencyConflict), errors.Is(err, model.ErrInvalidOrderTransition),
 		errors.Is(err, model.ErrPaymentAlreadyExists), errors.Is(err, model.ErrRefundAlreadyPending),

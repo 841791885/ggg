@@ -45,10 +45,10 @@ type CreateOrderInput struct {
 }
 
 // OrderService 负责购物车预览、订单创建与状态机流转。
-type OrderService struct{ repository repositories.Repository }
+type OrderService struct{ repository repositories.OrderStore }
 
 // NewOrderService 创建订单业务服务。
-func NewOrderService(repository repositories.Repository) *OrderService {
+func NewOrderService(repository repositories.OrderStore) *OrderService {
 	return &OrderService{repository: repository}
 }
 
@@ -382,25 +382,79 @@ func (s *OrderService) ConfirmReceipt(ctx context.Context, userID, orderID uint6
 	return updated, nil
 }
 
-// Ship 运营发货，仅允许已支付订单。
-// TODO(PRD-009 进阶): 相同物流信息重复提交应幂等返回首次结果而非 409（见 docs/ADVANCED-TASKS.md A7）。
-func (s *OrderService) Ship(ctx context.Context, operatorID, orderID uint64) (model.Order, error) {
-	order, err := s.repository.AdminGetOrderByID(ctx, orderID)
-	if err != nil {
-		return model.Order{}, fmt.Errorf("查询订单：%w", err)
+// ShipInput 表示运营发货所需的全部业务参数。
+type ShipInput struct {
+	OperatorID  uint64
+	OrderID     uint64
+	ShippingKey string // 客户端生成的"这一批发货"标识，长度 8~64
+	Carrier     string
+	TrackingNo  string
+}
+
+// Ship 运营发货（PRD-009 进阶 A7：幂等发货）。
+//
+// ── 幂等的三种形态里，这是第三种：状态判断 + 业务键去重 ──
+//
+//	· 下单幂等：靠客户端传的 Idempotency-Key（唯一键）
+//	· 回调幂等：靠渠道的 event_no（唯一键）
+//	· 发货幂等：先看【订单状态】这个客观事实，再用 shipping_key 区分"重试"还是"改单号"
+//
+// ── 分支决策表 ──
+//
+//	待发货 + 任意 key        → 正常发货（事务三件套）
+//	已发货 + 同 shipping_key → 幂等重试，返回当前订单 ✅ 不报错、不产生新记录
+//	已发货 + 异 shipping_key → 409（运营想换物流信息？系统拒绝，避免悄悄改写发货事实）
+//	其他状态                 → 409 非法迁移
+//
+// shipping_key 与下单幂等键同款处理：sha256 摘要成定长存储，防客户端传超长/怪字符。
+func (s *OrderService) Ship(ctx context.Context, input ShipInput) (model.Order, error) {
+	if len(input.ShippingKey) < 8 || len(input.ShippingKey) > 64 {
+		return model.Order{}, model.ErrInvalidShippingKey
 	}
+	if input.Carrier == "" || input.TrackingNo == "" {
+		return model.Order{}, model.ErrInvalidShippingKey // 复用同一 400 语义：参数不齐
+	}
+	keyHash := sha256.Sum256([]byte(input.ShippingKey))
+	shortKey := hex.EncodeToString(keyHash[:])[:32]
+
+	order, err := s.repository.AdminGetOrderByID(ctx, input.OrderID)
+	if err != nil {
+		return model.Order{}, err // ErrOrderNotFound 透传给 API 层映射 404
+	}
+
+	// 已发货：区分"同 key 重试"与"换了 key"。
+	if order.Status == model.OrderStatusShipped {
+		existing, findErr := s.repository.GetShipmentByOrderAndKey(ctx, input.OrderID, shortKey)
+		if findErr == nil && existing.ID != 0 {
+			return order, nil // 幂等出口：这批发货已经记过了，直接返回现状
+		}
+		if findErr != nil && !isModelNotFound(findErr) {
+			return model.Order{}, fmt.Errorf("核对发货记录：%w", findErr)
+		}
+		return model.Order{}, model.ErrInvalidOrderTransition // 换了 key = 想改发货事实，拒绝
+	}
+
+	// 非待发货状态（待支付/已完成/已取消）：非法迁移。
 	if !order.Status.CanTransitionTo(model.OrderStatusShipped) {
 		return model.Order{}, model.ErrInvalidOrderTransition
 	}
-	now := time.Now().UTC()
-	updated, err := s.repository.AdminUpdateOrderStatus(ctx, orderID, order.Status, model.OrderStatusShipped, map[string]any{"shipped_at": &now})
-	if err != nil {
-		return model.Order{}, fmt.Errorf("发货：%w", err)
+
+	// 正常发货：repository 单事务内完成 改状态→插发货→写日志。
+	shipment := model.Shipment{
+		ShippingKey: shortKey, Carrier: input.Carrier, TrackingNo: input.TrackingNo,
+		ShippedBy: input.OperatorID, ShippedAt: time.Now().UTC(),
 	}
-	if err := s.repository.CreateOrderStatusLog(ctx, model.OrderStatusLog{
-		OrderID: orderID, FromStatus: order.Status, ToStatus: updated.Status,
-		OperatorType: model.OperatorAdmin, OperatorID: operatorID, Remark: "运营发货",
-	}); err != nil {
+	updated, err := s.repository.ShipOrderTx(ctx, input.OrderID, input.OperatorID, shipment)
+	if err != nil {
+		// 并发兜底：两个不同请求同时通过上面的状态检查时，后提交者会在事务里撞
+		// RowsAffected=0（前态已被改）或唯一键冲突——两者都说明"有人刚发过货了"，
+		// 重新读取订单按幂等返回。
+		if errors.Is(err, model.ErrInvalidOrderTransition) || errors.Is(err, model.ErrShipmentDuplicate) {
+			fresh, getErr := s.repository.AdminGetOrderByID(ctx, input.OrderID)
+			if getErr == nil && fresh.Status == model.OrderStatusShipped {
+				return fresh, nil
+			}
+		}
 		return model.Order{}, err
 	}
 	return updated, nil
@@ -456,5 +510,6 @@ func newBizNo() string {
 func isModelNotFound(err error) bool {
 	return errors.Is(err, model.ErrSKUNotFound) || errors.Is(err, model.ErrProductNotFound) ||
 		errors.Is(err, model.ErrOrderNotFound) || errors.Is(err, model.ErrAddressNotFound) ||
-		errors.Is(err, model.ErrCouponNotFound) || errors.Is(err, model.ErrPaymentNotFound)
+		errors.Is(err, model.ErrCouponNotFound) || errors.Is(err, model.ErrPaymentNotFound) ||
+		errors.Is(err, model.ErrShipmentNotFound)
 }

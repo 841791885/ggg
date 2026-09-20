@@ -99,6 +99,13 @@ var (
 	ErrTaskNotFound = errors.New("任务不存在")
 	// ErrTaskNotRetryable 表示任务不处于失败状态，不能重试。
 	ErrTaskNotRetryable = errors.New("只有失败的任务可以重试")
+	// ErrShipmentDuplicate 表示同一批发货（同订单 + 同 shipping_key）已存在。
+	// 它是幂等重试的【信号】而非错误：service 捕获后应返回首次发货结果，不是报错给运营。
+	ErrShipmentDuplicate = errors.New("该批发货已记录")
+	// ErrShipmentNotFound 表示发货记录不存在。
+	ErrShipmentNotFound = errors.New("发货记录不存在")
+	// ErrInvalidShippingKey 表示发货幂等键缺失或长度不合规。
+	ErrInvalidShippingKey = errors.New("shipping_key 长度必须在 8 到 64 之间")
 	// ErrInvalidOrderQuery 表示订单列表查询条件不合法。
 	ErrInvalidOrderQuery = errors.New("page 必须大于等于 1，page_size 必须在 1 到 100 之间")
 	// ErrInvalidCouponInput 表示优惠券模板参数不合法。

@@ -47,3 +47,12 @@ type CreateNotificationRequest struct {
 	Title   string `json:"title"`
 	Content string `json:"content"`
 }
+
+// ShipOrderRequest 表示运营发货的请求体（PRD-009 A7）。
+// ShippingKey 是幂等键：客户端为"这一批发货动作"生成的唯一标识，
+// 重试时复用同一个 key，服务端据此返回首次结果而不重复发货。
+type ShipOrderRequest struct {
+	ShippingKey string `json:"shipping_key"`
+	Carrier     string `json:"carrier"`
+	TrackingNo  string `json:"tracking_no"`
+}
