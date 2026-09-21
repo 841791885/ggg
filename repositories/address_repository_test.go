@@ -199,11 +199,12 @@ func TestDefaultAddressUniqueConstraint(t *testing.T) {
 
 func createTestUser(t *testing.T, seed int) uint64 {
 	t.Helper()
-	// 用户名/邮箱带时间戳后缀：这两个字段有唯一索引，固定值第二次跑就撞键了。
-	suffix := time.Now().UnixNano() % 1_000_000
+	// 用户名/邮箱必须全局唯一：纳秒时间戳再拼上【进程ID】——
+	// 只用 Unix()%1e6 时，一轮循环内多轮迭代落在同一微秒就会自撞（集成测试跑快了真会撞上）。
+	suffix := fmt.Sprintf("%d_%d", os.Getpid(), time.Now().UnixNano())
 	user := &model.User{
-		Username:     fmt.Sprintf("test_cn_%d_%d", seed, suffix),
-		Email:        fmt.Sprintf("test_cn_%d_%d@test.local", seed, suffix),
+		Username:     fmt.Sprintf("test_cn_%d_%s", seed, suffix),
+		Email:        fmt.Sprintf("test_cn_%d_%s@test.local", seed, suffix),
 		PasswordHash: "not-a-real-hash", // 测试不校验密码，占位即可
 		Role:         "customer",
 		Status:       "active",

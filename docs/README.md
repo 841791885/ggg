@@ -28,6 +28,32 @@
 
 **下一步做什么看这里：** [ADVANCED-TASKS.md](./ADVANCED-TASKS.md) —— 全部留白任务（A1~A12）带现状、做法、验收标准和学习目标，按周排好路径。
 
+## 新机器上手（后端开发环境）
+
+前提：装好 Docker Desktop、Go（版本见 go.mod）。前端另见 web/README。
+
+```bash
+git clone <仓库地址> && cd ggg
+
+# ① 初始化数据库：起 MySQL 容器 + 按序执行全部迁移 + 记账（幂等，可重复跑）
+./scripts/init-db.sh
+
+# ② 注入第一个管理员（注册接口造不出 admin，这是唯一途径；已存在则跳过）
+go run ./cmd/seed            # 默认密码 12345678，可用 GOMALL_ADMIN_PASSWORD 覆盖
+
+# ③ 启动 API（含 worker），访问 http://localhost:8080
+go build -o /tmp/gomall-bin . && /tmp/gomall-bin
+#   或用 air 热重载：air
+
+# ④ 质量门禁
+go vet ./... && go test ./... -count=1     # ⚠️ 集成测试需要 MySQL 在跑（依赖①）
+```
+
+要点：
+- **结构变更的唯一入口是新增迁移文件**，禁止手工 ALTER 后不补迁移（会造成"账实不符"，本项目历史上踩过两次）。
+- 迁移链的验收标准 = PRD-002 阶段出口："能在空库完整重放"——上面 ①②③④ 全绿即通过。
+- 配置都在 config.yaml（jwt_secret / payment.callback_secret 为开发值，生产经环境变量注入——见 A10/A11）。
+
 ## 建设记录
 
 **这一步干了什么看这里：** [CHANGELOG-2026-09.md](./CHANGELOG-2026-09.md) —— 交付总账、时间线、14 条关键设计决策及理由、7 个踩坑经验、系统边界诚实清单。
